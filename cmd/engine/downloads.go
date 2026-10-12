@@ -195,3 +195,28 @@ func (e *engine) cancelDownload(id uint64) error {
 	j.cancel()
 	return nil
 }
+
+// running counts the downloads that haven't stopped yet.
+func (e *engine) running() int {
+	n := 0
+	for _, s := range e.dl.list() {
+		switch s.State {
+		case fetch.Checking, fetch.Downloading, fetch.Joining:
+			n++
+		}
+	}
+	return n
+}
+
+// stopAll cancels every running download and waits (up to wait) for them to
+// stop, so their unfinished files are cleaned up before the engine exits.
+func (e *engine) stopAll(wait time.Duration) {
+	e.dl.mu.Lock()
+	for _, j := range e.dl.jobs {
+		j.cancel()
+	}
+	e.dl.mu.Unlock()
+	for end := time.Now().Add(wait); e.running() > 0 && time.Now().Before(end); {
+		time.Sleep(50 * time.Millisecond)
+	}
+}
