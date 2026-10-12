@@ -11,6 +11,7 @@ import (
 
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/fetch"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/ipc"
+	"github.com/xoGUYFAWKSxo/internet-downloader/internal/launch"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/media"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/probe"
 )
@@ -29,12 +30,16 @@ type EngineStatus struct {
 	Message string `json:"message"`
 }
 
-// CheckEngine pings the engine. A fresh connection each time keeps this
-// simple until the window needs a live progress feed.
+// CheckEngine pings the engine, starting it first if it isn't running. A
+// fresh connection each time keeps this simple until the window needs a live
+// progress feed.
 func (a *App) CheckEngine() EngineStatus {
 	name, err := ipc.PipeName()
 	if err != nil {
 		return EngineStatus{Message: "Couldn't work out the engine's address: " + err.Error()}
+	}
+	if err := launch.Ensure(a.ctx, name); err != nil {
+		return EngineStatus{Message: "The download engine isn't running, and starting it failed: " + err.Error()}
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, 2*time.Second)
 	defer cancel()

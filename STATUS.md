@@ -74,5 +74,8 @@ None. The user left them to Claude's judgement (2026-10-12), and the answers are
 - Window (2026-10-12): `wails build` works. Through `wails dev` in the browser pane, the window showed "The download engine is running. Version 0.0.0-dev." With the engine stopped, "Check again" showed "The download engine isn't running."
 - Manual check (2026-10-12): engine started; a framed message piped into `nmhost.exe` reached the engine and its reply came back; nmhost exits cleanly on EOF; a second engine is refused.
 
+## Installing
+`installer/install.ps1` builds everything and installs it in `%LOCALAPPDATA%\Programs\Internet Downloader` (engine, relay, window, and a copy of FFmpeg), with Start Menu and desktop shortcuts. It also registers the relay from that folder. `-Uninstall` removes all of it. No PowerShell is needed after that: opening the app, or downloading from the browser, starts the engine if it isn't running (`internal/launch`). The engine keeps running after the window closes and writes its log to `%LOCALAPPDATA%\InternetDownloader\engine.log`. Checked on this machine (2026-10-12): with no engine running, one message through the installed relay started the engine in about 0.5 s, and the engine stayed up after the relay exited. Opening the Start Menu shortcut also started the engine.
+
 ## Not done yet
-Resume after a drop or crash (Phase 5). The engine keeps received streams and the download list in memory only, so both are lost when it restarts, and a failed download starts over.
+There's no tray icon yet, so the only way to stop a hidden engine is Task Manager (or `install.ps1 -Uninstall`). Resume after a drop or crash (Phase 5). The engine keeps received streams and the download list in memory only, so both are lost when it restarts, and a failed download starts over.
