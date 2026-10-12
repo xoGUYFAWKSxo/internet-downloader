@@ -48,7 +48,7 @@ None. The user left them to Claude's judgement (2026-10-12), and the answers are
 ## Verified
 - Unit tests: Native Messaging framing (limits, truncation, invalid JSON), pipe round-trip, single-instance pipe, SID-based pipe name, all four test servers (protocol, full body, range behaviour, Alt-Svc).
 - Registration script (2026-10-12): it registers the Chrome, Edge and Firefox keys and manifests. `-Browsers` limits it to the browsers you name, and `-Unregister` removes everything. A Firefox-style launch of `nmhost.exe` reached the engine.
-- Extension (2026-10-12): manifest tests for Chrome and Firefox, including that the key gives the fixed ID. An extension-style `{"type":"ping"}` sent through `nmhost.exe` returns ok with the version, and returns a plain-English error when the engine isn't running. **Not yet tried by loading it into a real browser.**
+- Extension (2026-10-12): manifest tests for Chrome and Firefox, including that the key gives the fixed ID. An extension-style `{"type":"ping"}` sent through `nmhost.exe` returns ok with the version, and returns a plain-English error when the engine isn't running. **Confirmed by the user in real Chrome and Firefox (2026-10-12):** both popups reported "Connected". Edge isn't tested; the user doesn't use it.
 - Window (2026-10-12): `wails build` works. Through `wails dev` in the browser pane, the window showed "The download engine is running. Version 0.0.0-dev." With the engine stopped, "Check again" showed "The download engine isn't running."
 - Manual check (2026-10-12): engine started; a framed message piped into `nmhost.exe` reached the engine and its reply came back; nmhost exits cleanly on EOF; a second engine is refused.
 
