@@ -111,7 +111,7 @@ func (e *engine) run(ctx context.Context, j *job, r probe.Request) {
 		}
 		fmt.Fprintf(e.log, "download %d (%s): %s: %v\n", j.ID, host, state, err)
 		e.dl.update(j, func(j *job) {
-			j.State, j.Error = state, capitalise(err.Error())+"."
+			j.State, j.Error = state, sentence(err)
 			if j.out != nil {
 				j.Done = j.out.Written()
 			}

@@ -251,6 +251,89 @@ func TestGate(t *testing.T) {
 	}
 }
 
+func TestGateGrowsBack(t *testing.T) {
+	g := newGate(4)
+	now := time.Unix(0, 0)
+	g.now = func() time.Time { return now }
+	if _, ok := g.grow(4, time.Minute); ok {
+		t.Fatal("grew without a refusal")
+	}
+	ctx := context.Background()
+	for range 3 {
+		g.acquire(ctx)
+	}
+	g.refused() // two still served
+	now = now.Add(59 * time.Second)
+	if _, ok := g.grow(4, time.Minute); ok {
+		t.Fatal("grew too soon")
+	}
+	now = now.Add(time.Second)
+	if n, ok := g.grow(4, time.Minute); !ok || n != 3 {
+		t.Fatalf("limit %d", n)
+	}
+	if _, ok := g.grow(4, time.Minute); ok {
+		t.Fatal("grew twice in one quiet spell")
+	}
+	now = now.Add(time.Minute)
+	g.grow(4, time.Minute)
+	now = now.Add(time.Minute)
+	if n, ok := g.grow(4, time.Minute); ok || n != 4 {
+		t.Fatalf("grew past the plan: %d", n)
+	}
+}
+
+// A stream that finishes early takes over half of a slow one.
+func TestSlowStreamGetsHelp(t *testing.T) {
+	const big = 8 << 20
+	body := testserver.Content(big)
+	var starts sync.Map
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rng := r.Header.Get("Range")
+		starts.Store(rng, true)
+		if strings.HasPrefix(rng, "bytes=0-") {
+			// The first piece trickles; the others are fast.
+			w = slowWriter{w}
+		}
+		http.ServeContent(w, r, "f.bin", time.Time{}, bytes.NewReader(body))
+	}))
+	defer srv.Close()
+	res := &probe.Result{URL: srv.URL, Protocol: probe.HTTP1, Size: big, Ranges: true,
+		Plan: probe.Plan{Mode: probe.Ranges, Streams: 2, Connections: 2}}
+	out, _ := outfile.Create(t.TempDir(), "f", big)
+	if err := Download(context.Background(), probe.Request{URL: srv.URL}, res, out, Options{}); err != nil {
+		out.Abort()
+		t.Fatal(err)
+	}
+	path, err := out.Finish()
+	got, _ := os.ReadFile(path)
+	if err != nil || !bytes.Equal(got, body) {
+		t.Fatalf("content differs: %v", err)
+	}
+	n := 0
+	starts.Range(func(any, any) bool { n++; return true })
+	if n < 3 {
+		t.Fatalf("only %d range requests; the slow piece was never split", n)
+	}
+}
+
+type slowWriter struct{ http.ResponseWriter }
+
+func (s slowWriter) Write(p []byte) (int, error) {
+	done := 0
+	for len(p) > 0 {
+		k := min(len(p), 32<<10)
+		time.Sleep(10 * time.Millisecond)
+		n, err := s.ResponseWriter.Write(p[:k])
+		done += n
+		if err != nil {
+			return done, err
+		}
+		s.ResponseWriter.(http.Flusher).Flush()
+		p = p[k:]
+	}
+	return done, nil
+}
+
 func TestCancel(t *testing.T) {
 	block := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -279,10 +362,10 @@ func TestSplit(t *testing.T) {
 		parts := split(tc.size, tc.n)
 		at := int64(0)
 		for _, p := range parts {
-			if p.Start != at || p.End <= p.Start {
-				t.Fatalf("%d/%d: %v", tc.size, tc.n, parts)
+			if p.pos != at || p.end <= p.pos {
+				t.Fatalf("%d/%d: piece %d-%d", tc.size, tc.n, p.pos, p.end)
 			}
-			at = p.End
+			at = p.end
 		}
 		if at != tc.size {
 			t.Fatalf("%d/%d: ends at %d", tc.size, tc.n, at)

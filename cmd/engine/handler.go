@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/ipc"
@@ -107,7 +108,7 @@ func (e *engine) handle(m ipc.Message) ipc.Message {
 
 func (e *engine) addMedia(browser string, c media.Context) ipc.Message {
 	if err := c.Validate(); err != nil {
-		return fail(capitalise(err.Error()) + ".")
+		return fail(sentence(err))
 	}
 	id := e.inbox.Add(browser, c, e.now())
 	// Host only: query strings often carry access tokens.
@@ -132,7 +133,7 @@ func (e *engine) probeMedia(id uint64) ipc.Message {
 	host := hostOf(c.URL)
 	if err != nil {
 		fmt.Fprintf(e.log, "probe %s: %v\n", host, err)
-		return fail(capitalise(err.Error()) + ".")
+		return fail(sentence(err))
 	}
 	fmt.Fprintf(e.log, "probe %s: %s, ranges %v, size %d, plan %s\n", host, res.Protocol, res.Ranges, res.Size, res.Plan.Mode)
 	// The final address can carry a signed token; the window doesn't need it.
@@ -152,4 +153,10 @@ func capitalise(s string) string {
 		return s
 	}
 	return string(s[0]-'a'+'A') + s[1:]
+}
+
+// sentence turns an error into a sentence for the window: capitalised, with
+// one full stop. Some Windows messages already end with one.
+func sentence(err error) string {
+	return capitalise(strings.TrimRight(err.Error(), ". ")) + "."
 }
