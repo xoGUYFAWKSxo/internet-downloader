@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/ipc"
+	"github.com/xoGUYFAWKSxo/internet-downloader/internal/launch"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/nativemsg"
 )
 
@@ -41,6 +42,11 @@ func dial() (*ipc.Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Start the engine if it isn't running, so the browser works without
+	// anyone opening the app first.
+	if err := launch.Ensure(context.Background(), name); err != nil {
+		return nil, err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	return ipc.Dial(ctx, name)
@@ -66,7 +72,7 @@ func main() {
 		if client == nil {
 			if client, err = dial(); err != nil {
 				client = nil
-				send(reply{Error: "The downloader isn't running. Start it and try again."})
+				send(reply{Error: "The downloader isn't running, and starting it failed: " + err.Error()})
 				continue
 			}
 		}
