@@ -2,6 +2,8 @@
 
 These are settled. Don't reopen them unless the user asks. Newest first.
 
+- **2026-10-12: Fixed Chrome/Edge extension ID `akmjpphfkcdejdhhobbbnbddgdbajpem` for development.** It comes from the public `key` in `extension/manifest.base.json`. The private key was never saved; an unpacked extension doesn't need it. A Chrome Web Store listing will get its own ID, which then has to be added to `allowed_origins`. Firefox uses the add-on ID `internet-downloader@xoguyfawksxo`. One `extension/src` is shared, and `extension/build.mjs` writes a manifest for each browser.
+
 - **2026-10-12: Merge on green CI.** Claude may merge its own PRs without asking once the `build-and-test` check passes. A failed or pending check is never merged. GitHub auto-merge is off; wait with `gh run watch <id> --exit-status`, then `gh pr merge N --merge`.
 - **2026-10-12: The open questions were left to Claude's judgement.** The user asked Claude to pick. The five decisions below are those picks.
 - **2026-10-12: Go for all native code.** That covers the engine, the Native Messaging relay and the UI backend, so there's one toolchain and one language. Go's standard library covers HTTP/1.1 and HTTP/2. HTTP/3 uses `quic-go`. Rust was dropped: it's harder to maintain for this team, and there was no measured need for it.

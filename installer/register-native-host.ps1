@@ -5,14 +5,14 @@ for the current user. No admin rights needed; everything goes under HKCU and
 %LOCALAPPDATA%.
 
 .EXAMPLE
-.\register-native-host.ps1 -ChromeExtensionId abcdefghijklmnopabcdefghijklmnop
-.\register-native-host.ps1 -Browsers Chrome,Firefox -ChromeExtensionId abcd...
+.\register-native-host.ps1
+.\register-native-host.ps1 -Browsers Chrome,Firefox
 .\register-native-host.ps1 -Unregister
 #>
 param(
     [string]$HostPath = (Join-Path $PSScriptRoot '..\bin\nmhost.exe'),
-    # Chrome and Edge share one ID when the extension manifest carries a fixed "key".
-    [string]$ChromeExtensionId,
+    # Fixed by the "key" in extension/manifest.base.json; Chrome and Edge share it.
+    [string]$ChromeExtensionId = 'akmjpphfkcdejdhhobbbnbddgdbajpem',
     [string]$FirefoxExtensionId = 'internet-downloader@xoguyfawksxo',
     [ValidateSet('Chrome', 'Edge', 'Firefox')]
     [string[]]$Browsers = @('Chrome', 'Edge', 'Firefox'),

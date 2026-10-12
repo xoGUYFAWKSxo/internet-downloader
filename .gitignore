@@ -9,3 +9,4 @@ ui/frontend/dist/
 *.db
 *.db-wal
 *.db-shm
+/extension/dist/

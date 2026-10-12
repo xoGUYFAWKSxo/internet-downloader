@@ -2,7 +2,7 @@
 
 _Last updated: 2026-10-12, branch phase0-scaffold._
 
-**Project status: Phase 0 in progress.** Go module, IPC, Native Messaging framing, engine and relay skeletons, test servers and CI are built. Still to do in Phase 0: Wails UI skeleton, extension skeleton (Chrome, Firefox, Edge). The Native Messaging registration script is done (`installer/register-native-host.ps1`).
+**Project status: Phase 0 in progress.** Go module, IPC, Native Messaging framing, engine and relay skeletons, test servers and CI are built. The extension skeleton (Chrome, Firefox, Edge) with a "Check connection to the app" popup, and the Native Messaging registration script, are done. Still to do in Phase 0: Wails UI skeleton.
 
 ## Repository
 - Local folder: `C:\Users\Allen\OneDrive\Documents\projects\internet-downloader`.
@@ -48,6 +48,7 @@ None. The user left them to Claude's judgement (2026-10-12), and the answers are
 ## Verified
 - Unit tests: Native Messaging framing (limits, truncation, invalid JSON), pipe round-trip, single-instance pipe, SID-based pipe name, all four test servers (protocol, full body, range behaviour, Alt-Svc).
 - Registration script (2026-10-12): it registers the Chrome, Edge and Firefox keys and manifests. `-Browsers` limits it to the browsers you name, and `-Unregister` removes everything. A Firefox-style launch of `nmhost.exe` reached the engine.
+- Extension (2026-10-12): manifest tests for Chrome and Firefox, including that the key gives the fixed ID. An extension-style `{"type":"ping"}` sent through `nmhost.exe` returns ok with the version, and returns a plain-English error when the engine isn't running. **Not yet tried by loading it into a real browser.**
 - Manual check (2026-10-12): engine started; a framed message piped into `nmhost.exe` reached the engine and its reply came back; nmhost exits cleanly on EOF; a second engine is refused.
 
 ## Not done yet

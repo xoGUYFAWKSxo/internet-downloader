@@ -30,6 +30,9 @@ Go is at `C:\Program Files\Go\bin` (add it to PATH in Git Bash: `export PATH="/c
 go vet ./...
 go build -o bin/ ./cmd/...
 go test -count=1 ./...
+node --test extension/build.test.mjs
+node extension/build.mjs        # unpacked builds in extension/dist/{chrome,firefox}
+powershell -File installer/register-native-host.ps1   # register the relay (bin/nmhost.exe) for Chrome, Edge, Firefox
 ```
 - `go vet` must be clean. CI runs the `build-and-test` check (`.github/workflows/build.yml`) on every PR.
 - Network tests use `internal/testserver` (local HTTP/1.1 with and without ranges, HTTP/2, HTTP/3). Never hit the real internet in tests.
