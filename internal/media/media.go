@@ -151,6 +151,18 @@ func (b *Inbox) Add(browser string, c Context, now time.Time) uint64 {
 	return b.nextID
 }
 
+// Get returns the full item with that ID, if it's still kept.
+func (b *Inbox) Get(id uint64) (Item, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, it := range b.items {
+		if it.ID == id {
+			return it, true
+		}
+	}
+	return Item{}, false
+}
+
 // Summaries lists the items, newest first.
 func (b *Inbox) Summaries() []Summary {
 	b.mu.Lock()

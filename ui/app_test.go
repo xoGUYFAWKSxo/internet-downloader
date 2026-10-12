@@ -32,3 +32,13 @@ func TestSummariesFrom(t *testing.T) {
 		t.Fatalf("empty list: %+v, %v", got, err)
 	}
 }
+
+func TestProbeFrom(t *testing.T) {
+	got, err := probeFrom(ipc.Message{Type: "media.probe", Payload: []byte(`{"protocol":"HTTP/2","size":5,"plan":{"mode":"single"}}`)}, nil)
+	if err != nil || got.Protocol != "HTTP/2" || got.Plan.Mode != "single" {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+	if _, err := probeFrom(ipc.Message{Type: "error", Error: "The server answered 404 Not Found."}, nil); err == nil || err.Error() != "The server answered 404 Not Found." {
+		t.Fatalf("engine error: %v", err)
+	}
+}

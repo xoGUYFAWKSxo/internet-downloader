@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/ipc"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/media"
+	"github.com/xoGUYFAWKSxo/internet-downloader/internal/probe"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/version"
 )
 
@@ -27,6 +29,7 @@ type engine struct {
 	inbox *media.Inbox
 	log   io.Writer
 	now   func() time.Time
+	probe probe.Options // tests point this at their own certificates
 }
 
 func newEngine(log io.Writer) *engine {
@@ -50,6 +53,14 @@ func (e *engine) handle(m ipc.Message) ipc.Message {
 		return pong()
 	case "media.list":
 		return ipc.Message{Type: "media.list", Payload: payload(e.inbox.Summaries())}
+	case "media.probe":
+		var in struct {
+			ID uint64 `json:"id"`
+		}
+		if err := json.Unmarshal(m.Payload, &in); err != nil {
+			return fail("invalid request: " + err.Error())
+		}
+		return e.probeMedia(in.ID)
 	case "extension":
 		var in fromExtension
 		if err := json.Unmarshal(m.Payload, &in); err != nil {
@@ -73,13 +84,40 @@ func (e *engine) addMedia(browser string, c media.Context) ipc.Message {
 	}
 	id := e.inbox.Add(browser, c, e.now())
 	// Host only: query strings often carry access tokens.
-	host := ""
-	if u, err := url.Parse(c.URL); err == nil {
-		host = u.Host
-	}
+	host := hostOf(c.URL)
 	fmt.Fprintf(e.log, "received %s stream from %s: %s (%d cookies, %d-byte manifest)\n",
 		c.Kind, browser, host, len(c.Cookies), len(c.Manifest))
 	return ipc.Message{Type: "media.added", Payload: payload(map[string]any{"id": id})}
+}
+
+// probeMedia checks the server of a received stream with the browser's
+// cookies and headers. For HLS and DASH this is the playlist's server; the
+// fragments are checked when Phase 4 fetches them.
+func (e *engine) probeMedia(id uint64) ipc.Message {
+	it, ok := e.inbox.Get(id)
+	if !ok {
+		return fail("That item is no longer in the list.")
+	}
+	c := it.Context
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	res, err := probe.Probe(ctx, probe.Request{URL: c.URL, Referer: c.Referer, Headers: c.Headers, Cookies: c.Cookies}, e.probe)
+	host := hostOf(c.URL)
+	if err != nil {
+		fmt.Fprintf(e.log, "probe %s: %v\n", host, err)
+		return fail(capitalise(err.Error()) + ".")
+	}
+	fmt.Fprintf(e.log, "probe %s: %s, ranges %v, size %d, plan %s\n", host, res.Protocol, res.Ranges, res.Size, res.Plan.Mode)
+	// The final address can carry a signed token; the window doesn't need it.
+	res.URL = ""
+	return ipc.Message{Type: "media.probe", Payload: payload(res)}
+}
+
+func hostOf(raw string) string {
+	if u, err := url.Parse(raw); err == nil {
+		return u.Host
+	}
+	return ""
 }
 
 func capitalise(s string) string {

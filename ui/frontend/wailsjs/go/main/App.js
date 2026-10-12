@@ -6,6 +6,10 @@ export function CheckEngine() {
   return window['go']['main']['App']['CheckEngine']();
 }
 
+export function CheckServer(arg1) {
+  return window['go']['main']['App']['CheckServer'](arg1);
+}
+
 export function ReceivedMedia() {
   return window['go']['main']['App']['ReceivedMedia']();
 }
