@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,8 +20,13 @@ import (
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/probe"
 )
 
-// errShutdown is why downloads stop when the engine quits.
-var errShutdown = errors.New("the app was closed")
+// errShutdown is why downloads stop when the engine quits, and errPaused
+// why one stops when the user presses Stop. Both keep the unfinished file
+// when it can be resumed; a plain cancel throws it away.
+var (
+	errShutdown = errors.New("the app was closed")
+	errPaused   = errors.New("paused")
+)
 
 // keepDownloads is how many downloads the saved list holds.
 const keepDownloads = 200
@@ -273,14 +280,17 @@ func (e *engine) commit(j *job, out *outfile.File) {
 	}
 }
 
+// cancelledByUser is true when the user cancelled the download, which
+// throws away its unfinished file.
 func cancelledByUser(ctx context.Context) bool {
-	return ctx.Err() != nil && !errors.Is(context.Cause(ctx), errShutdown)
+	return ctx.Err() != nil && errors.Is(context.Cause(ctx), context.Canceled)
 }
 
 // stopped records why j stopped, and whether it can be resumed.
 func (e *engine) stopped(ctx context.Context, j *job, err error) {
 	byUser := cancelledByUser(ctx)
 	shutdown := errors.Is(context.Cause(ctx), errShutdown)
+	paused := errors.Is(context.Cause(ctx), errPaused)
 	e.dl.mu.Lock()
 	canResume := e.jr != nil && j.req != nil && j.part != "" && j.validator != "" && !byUser
 	if !canResume && j.part != "" {
@@ -291,12 +301,19 @@ func (e *engine) stopped(ctx context.Context, j *job, err error) {
 	switch {
 	case byUser:
 		state, err = fetch.Cancelled, errors.New("cancelled")
+	case paused && canResume:
+		state, err = fetch.Paused, nil
+	case paused:
+		state, err = fetch.Cancelled, errors.New("stopped; this download can't be resumed, so its unfinished file was deleted")
 	case shutdown && canResume:
 		state, err = fetch.Paused, errors.New("paused when the app was closed")
 	case shutdown:
 		err = errors.New("stopped when the app was closed; send it from the browser again")
 	}
-	j.State, j.Error, j.Resumable, j.Streams = state, sentence(err), canResume, 0
+	j.State, j.Error, j.Resumable, j.Streams = state, "", canResume, 0
+	if err != nil {
+		j.Error = sentence(err)
+	}
 	if j.progress != nil {
 		j.Done, j.PartsDone = j.progress()
 	}
@@ -422,6 +439,88 @@ func (e *engine) cancelDownload(id uint64) error {
 	return nil
 }
 
+// pauseDownload stops a running download, keeping its unfinished file when
+// it can be resumed.
+func (e *engine) pauseDownload(id uint64) error {
+	j := e.dl.find(id)
+	if j == nil {
+		return errors.New("That download is no longer in the list.")
+	}
+	e.dl.mu.Lock()
+	cancel, active := j.cancel, isRunning(j.State)
+	e.dl.mu.Unlock()
+	if !active || cancel == nil {
+		return errors.New("That download isn't running.")
+	}
+	cancel(errPaused)
+	return nil
+}
+
+// removeDownloads takes downloads off the list. A paused download's
+// unfinished file is deleted; with deleteFiles, so is a finished one's file.
+// Running downloads are left alone and reported.
+func (e *engine) removeDownloads(ids []uint64, deleteFiles bool) error {
+	busy, failed := 0, 0
+	for _, id := range ids {
+		e.dl.mu.Lock()
+		var j *job
+		at := -1
+		for i, x := range e.dl.jobs {
+			if x.ID == id {
+				j, at = x, i
+				break
+			}
+		}
+		if j == nil {
+			e.dl.mu.Unlock()
+			continue
+		}
+		if isRunning(j.State) {
+			busy++
+			e.dl.mu.Unlock()
+			continue
+		}
+		var files []string
+		if j.part != "" {
+			files = append(files, j.part)
+		}
+		if deleteFiles && j.State == fetch.Done && j.Path != "" {
+			files = append(files, j.Path)
+		}
+		e.dl.jobs = append(e.dl.jobs[:at], e.dl.jobs[at+1:]...)
+		e.dl.mu.Unlock()
+		for _, f := range files {
+			if err := os.Remove(f); err != nil && !errors.Is(err, os.ErrNotExist) {
+				failed++
+				fmt.Fprintf(e.log, "download %d (%s): couldn't delete its file: %v\n", j.ID, j.host, err)
+			}
+		}
+		if e.jr != nil {
+			if err := e.jr.Delete(j.ID); err != nil {
+				fmt.Fprintf(e.log, "download %d (%s): couldn't take it off the saved list: %v\n", j.ID, j.host, err)
+			}
+		}
+	}
+	switch {
+	case busy == 1:
+		return errors.New("A download is still running; stop it first.")
+	case busy > 1:
+		return fmt.Errorf("%d downloads are still running; stop them first.", busy)
+	case failed > 0:
+		return errors.New("Some files couldn't be deleted; they may be open in another program.")
+	}
+	return nil
+}
+
+// addURL downloads an address typed or pasted into the window.
+func (e *engine) addURL(raw string) (uint64, error) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return 0, errors.New("That isn't a web address. It should start with http:// or https://.")
+	}
+	return e.download(probe.Request{URL: u.String()}), nil
+}
+
 // resumeDownload carries on with a paused or failed download.
 func (e *engine) resumeDownload(id uint64) error {
 	j := e.dl.find(id)
@@ -514,12 +613,19 @@ func covered(rs []outfile.Range) int64 {
 func (e *engine) running() int {
 	n := 0
 	for _, s := range e.dl.list() {
-		switch s.State {
-		case fetch.Checking, fetch.Downloading, fetch.Joining, fetch.Waiting:
+		if isRunning(s.State) {
 			n++
 		}
 	}
 	return n
+}
+
+func isRunning(state string) bool {
+	switch state {
+	case fetch.Checking, fetch.Downloading, fetch.Joining, fetch.Waiting:
+		return true
+	}
+	return false
 }
 
 // stopAll stops every running download and waits (up to wait) for them to

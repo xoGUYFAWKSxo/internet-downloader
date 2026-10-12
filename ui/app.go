@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
+
+	"golang.org/x/sys/windows"
 
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/fetch"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/ipc"
@@ -111,13 +114,60 @@ func (a *App) ResumeDownload(id uint64) error {
 	return decode(a.call(ipc.Message{Type: "downloads.resume", Payload: idPayload(id)}))(nil)
 }
 
-// ShowInFolder opens Explorer with the file selected.
-func (a *App) ShowInFolder(path string) error {
+// PauseDownload stops a running download, keeping what is in when it can be
+// resumed.
+func (a *App) PauseDownload(id uint64) error {
+	return decode(a.call(ipc.Message{Type: "downloads.pause", Payload: idPayload(id)}))(nil)
+}
+
+// RemoveDownloads takes downloads off the list, and with deleteFiles also
+// deletes the finished files.
+func (a *App) RemoveDownloads(ids []uint64, deleteFiles bool) error {
+	p, _ := json.Marshal(map[string]any{"ids": ids, "deleteFiles": deleteFiles})
+	return decode(a.call(ipc.Message{Type: "downloads.remove", Payload: p}))(nil)
+}
+
+// AddURL downloads a web address into the Downloads folder.
+func (a *App) AddURL(u string) (uint64, error) {
+	p, _ := json.Marshal(map[string]string{"url": u})
+	var out struct {
+		ID uint64 `json:"id"`
+	}
+	err := decode(a.call(ipc.Message{Type: "downloads.add", Payload: p}))(&out)
+	return out.ID, err
+}
+
+// OpenFile opens a finished download with its usual program.
+func (a *App) OpenFile(path string) error {
+	if err := existingFile(path); err != nil {
+		return err
+	}
+	verb, _ := windows.UTF16PtrFromString("open")
+	file, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return err
+	}
+	dir, _ := windows.UTF16PtrFromString(filepath.Dir(path))
+	if err := windows.ShellExecute(0, verb, file, nil, dir, windows.SW_SHOWNORMAL); err != nil {
+		return fmt.Errorf("Windows couldn't open the file: %w", err)
+	}
+	return nil
+}
+
+func existingFile(path string) error {
 	if !filepath.IsAbs(path) {
 		return errors.New("not a file path")
 	}
 	if _, err := os.Stat(path); err != nil {
 		return errors.New("the file isn't there any more")
+	}
+	return nil
+}
+
+// ShowInFolder opens Explorer with the file selected.
+func (a *App) ShowInFolder(path string) error {
+	if err := existingFile(path); err != nil {
+		return err
 	}
 	// Explorer's exit code is 1 even when it worked, so it isn't checked.
 	exec.Command("explorer.exe", "/select,", path).Start()

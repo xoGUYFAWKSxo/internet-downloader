@@ -109,6 +109,39 @@ func (e *engine) handle(m ipc.Message) ipc.Message {
 			return fail(err.Error())
 		}
 		return ipc.Message{Type: "downloads.resume"}
+	case "downloads.pause":
+		var in idRequest
+		if err := json.Unmarshal(m.Payload, &in); err != nil {
+			return fail("invalid request: " + err.Error())
+		}
+		if err := e.pauseDownload(in.ID); err != nil {
+			return fail(err.Error())
+		}
+		return ipc.Message{Type: "downloads.pause"}
+	case "downloads.remove":
+		var in struct {
+			IDs         []uint64 `json:"ids"`
+			DeleteFiles bool     `json:"deleteFiles"`
+		}
+		if err := json.Unmarshal(m.Payload, &in); err != nil {
+			return fail("invalid request: " + err.Error())
+		}
+		if err := e.removeDownloads(in.IDs, in.DeleteFiles); err != nil {
+			return fail(err.Error())
+		}
+		return ipc.Message{Type: "downloads.remove"}
+	case "downloads.add":
+		var in struct {
+			URL string `json:"url"`
+		}
+		if err := json.Unmarshal(m.Payload, &in); err != nil {
+			return fail("invalid request: " + err.Error())
+		}
+		id, err := e.addURL(in.URL)
+		if err != nil {
+			return fail(err.Error())
+		}
+		return ipc.Message{Type: "downloads.add", Payload: payload(idRequest{id})}
 	case "extension":
 		var in fromExtension
 		if err := json.Unmarshal(m.Payload, &in); err != nil {
