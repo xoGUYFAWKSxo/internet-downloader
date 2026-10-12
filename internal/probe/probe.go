@@ -360,3 +360,47 @@ func retryAfter(resp *http.Response, now time.Time) time.Duration {
 	}
 	return 0
 }
+
+// For is r for another address, such as a segment on a CDN: it keeps only
+// the cookies a browser would send there (domain, path and Secure match).
+// A cookie without a domain belongs to r's own host only.
+func (r Request) For(raw string) Request {
+	out := r
+	out.URL, out.Cookies = raw, nil
+	u, err := url.Parse(raw)
+	if err != nil {
+		return out
+	}
+	own := ""
+	if o, err := url.Parse(r.URL); err == nil {
+		own = strings.ToLower(o.Hostname())
+	}
+	host := strings.ToLower(u.Hostname())
+	path := u.EscapedPath()
+	if path == "" {
+		path = "/"
+	}
+	for _, c := range r.Cookies {
+		d := strings.TrimPrefix(strings.ToLower(c.Domain), ".")
+		switch {
+		case d == "" && host != own:
+			continue
+		case d != "" && host != d && !strings.HasSuffix(host, "."+d):
+			continue
+		case c.Secure && u.Scheme != "https":
+			continue
+		case c.Path != "" && !pathMatch(path, c.Path):
+			continue
+		}
+		out.Cookies = append(out.Cookies, c)
+	}
+	return out
+}
+
+// pathMatch is the cookie path rule of RFC 6265 section 5.1.4.
+func pathMatch(path, cookie string) bool {
+	if path == cookie {
+		return true
+	}
+	return strings.HasPrefix(path, cookie) && (strings.HasSuffix(cookie, "/") || path[len(cookie)] == '/')
+}

@@ -149,10 +149,6 @@ func TestDownloadReceivedMedia(t *testing.T) {
 
 func TestDownloadRefusals(t *testing.T) {
 	e := newEngine(&bytes.Buffer{})
-	added := e.handle(ext(`{"type":"media","media":{"url":"https://x.example/a.m3u8","kind":"hls","manifest":"#EXTM3U\n"}}`))
-	if r := e.handle(ipc.Message{Type: "media.download", Payload: added.Payload}); r.Type != "error" || !strings.Contains(r.Error, "HLS and DASH") {
-		t.Fatalf("hls: %+v", r)
-	}
 	if r := e.handle(ipc.Message{Type: "media.download", Payload: []byte(`{"id":999}`)}); r.Type != "error" || !strings.Contains(r.Error, "no longer") {
 		t.Fatalf("missing: %+v", r)
 	}

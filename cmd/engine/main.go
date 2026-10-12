@@ -1,9 +1,10 @@
 // Command engine is the background download engine. It owns the IPC pipe,
 // keeps the streams the browser sends, checks their servers and downloads
-// plain files into the Downloads folder.
+// files and streams into the Downloads folder.
 //
 // "engine -probe URL" checks one server and prints what it found, and
-// "engine -get URL" downloads one file, without starting the engine.
+// "engine -get URL" downloads one file or HLS/DASH stream, without starting
+// the engine.
 package main
 
 import (
@@ -11,12 +12,16 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"os/signal"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/fetch"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/ipc"
+	"github.com/xoGUYFAWKSxo/internet-downloader/internal/media"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/outfile"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/probe"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/version"
@@ -80,7 +85,11 @@ func getOnce(u, dir string) int {
 		<-sig
 		e.cancelDownload(1)
 	}()
-	e.download(probe.Request{URL: u})
+	if kind := streamKind(u); kind != "" {
+		e.downloadStream(media.Context{URL: u, Kind: kind})
+	} else {
+		e.download(probe.Request{URL: u})
+	}
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 	last, at := int64(0), time.Now()
@@ -96,13 +105,36 @@ func getOnce(u, dir string) int {
 			return 0
 		case now := <-tick.C:
 			d := e.dl.list()[0]
+			if d.State == fetch.Joining {
+				fmt.Fprintf(os.Stderr, "%s: joining the tracks with FFmpeg\n", d.Name)
+			}
 			if d.State != fetch.Downloading {
 				continue
 			}
 			speed := float64(d.Done-last) / now.Sub(at).Seconds()
 			last, at = d.Done, now
-			fmt.Fprintf(os.Stderr, "%s: %s of %s, %s/s (%s, %d streams)\n", d.Name,
-				outfile.Bytes(d.Done), outfile.Bytes(d.Size), outfile.Bytes(int64(speed)), d.Protocol, d.Streams)
+			of := "of " + outfile.Bytes(d.Size)
+			if d.Parts > 0 {
+				of = fmt.Sprintf("segment %d of %d", d.PartsDone, d.Parts)
+			}
+			fmt.Fprintf(os.Stderr, "%s: %s %s, %s/s (%s, %d streams)\n", d.Name,
+				outfile.Bytes(d.Done), of, outfile.Bytes(int64(speed)), d.Protocol, d.Streams)
 		}
 	}
+}
+
+// streamKind tells HLS and DASH addresses from plain files by their
+// extension; "" for anything else.
+func streamKind(u string) string {
+	pu, err := url.Parse(u)
+	if err != nil {
+		return ""
+	}
+	switch strings.ToLower(path.Ext(pu.Path)) {
+	case ".m3u8", ".m3u":
+		return media.KindHLS
+	case ".mpd":
+		return media.KindDASH
+	}
+	return ""
 }

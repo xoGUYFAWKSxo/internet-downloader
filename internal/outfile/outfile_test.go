@@ -150,3 +150,21 @@ func TestBytes(t *testing.T) {
 		}
 	}
 }
+
+func TestReplace(t *testing.T) {
+	dir := t.TempDir()
+	o, err := Create(dir, "clip.mp4", -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(dir, "made-elsewhere")
+	os.WriteFile(src, []byte("joined"), 0o644)
+	path, err := o.Replace(src)
+	b, _ := os.ReadFile(path)
+	if err != nil || filepath.Base(path) != "clip.mp4" || string(b) != "joined" || o.Written() != 6 {
+		t.Fatalf("%v %s %q", err, path, b)
+	}
+	if _, err := os.Stat(src); !os.IsNotExist(err) {
+		t.Fatal("source left behind")
+	}
+}

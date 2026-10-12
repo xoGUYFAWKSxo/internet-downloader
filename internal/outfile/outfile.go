@@ -136,6 +136,30 @@ func (o *File) Finish() (string, error) {
 	if err := o.f.Close(); err != nil {
 		return "", err
 	}
+	return o.rename()
+}
+
+// Replace finishes the file with src, a complete file made elsewhere on the
+// same disk (such as FFmpeg's output), and names it as Finish does.
+func (o *File) Replace(src string) (string, error) {
+	if err := o.f.Close(); err != nil {
+		return "", err
+	}
+	fi, err := os.Stat(src)
+	if err != nil {
+		return "", err
+	}
+	if err := os.Rename(src, o.f.Name()); err != nil {
+		return "", err
+	}
+	o.mu.Lock()
+	o.size, o.have = fi.Size(), []Range{{0, fi.Size()}}
+	o.mu.Unlock()
+	o.written.Store(fi.Size())
+	return o.rename()
+}
+
+func (o *File) rename() (string, error) {
 	part := o.f.Name()
 	// os.Rename replaces an existing file on Windows; a file of the same
 	// name may have appeared since Create, so look again.

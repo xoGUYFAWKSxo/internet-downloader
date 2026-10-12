@@ -4,6 +4,7 @@ package fetch
 const (
 	Checking    = "checking"
 	Downloading = "downloading"
+	Joining     = "joining" // FFmpeg is joining the tracks of a stream
 	Done        = "done"
 	Failed      = "failed"
 	Cancelled   = "cancelled"
@@ -22,5 +23,8 @@ type Status struct {
 	Protocol string `json:"protocol,omitempty"`
 	Mode     string `json:"mode,omitempty"`
 	Streams  int    `json:"streams,omitempty"`
-	Started  string `json:"started"`
+	// Segments of an HLS or DASH stream, when it is one.
+	Parts     int    `json:"parts,omitempty"`
+	PartsDone int    `json:"partsDone,omitempty"`
+	Started   string `json:"started"`
 }

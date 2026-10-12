@@ -225,3 +225,24 @@ func TestOtherHostH3IsNotUsed(t *testing.T) {
 		t.Fatalf("got %+v", r)
 	}
 }
+
+func TestRequestFor(t *testing.T) {
+	r := Request{URL: "https://www.site.com/watch/1", Cookies: []media.Cookie{
+		{Name: "host", Value: "1"},
+		{Name: "site", Value: "2", Domain: ".site.com"},
+		{Name: "secure", Value: "3", Domain: "site.com", Secure: true},
+		{Name: "path", Value: "4", Domain: "site.com", Path: "/video"},
+	}}
+	cases := map[string]string{
+		"https://www.site.com/x":           "host=1; site=2; secure=3",
+		"https://cdn.site.com/video/seg1":  "site=2; secure=3; path=4",
+		"http://cdn.site.com/videos/seg1":  "site=2",
+		"https://othersite.com/video/seg1": "",
+		"https://evil.com/?u=www.site.com": "",
+	}
+	for u, want := range cases {
+		if got := cookieHeader(r.For(u).Cookies); got != want {
+			t.Errorf("%s: got %q, want %q", u, got, want)
+		}
+	}
+}

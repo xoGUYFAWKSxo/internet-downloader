@@ -12,6 +12,7 @@ import (
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/ipc"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/media"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/probe"
+	"github.com/xoGUYFAWKSxo/internet-downloader/internal/stream"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/version"
 )
 
@@ -33,12 +34,14 @@ type engine struct {
 	probe probe.Options // tests point this at their own certificates
 	dir   string        // where downloads are saved
 	dl    downloads
+	// ffmpeg is the FFmpeg program, or "" when there is none.
+	ffmpeg string
 	// finished, if set, is called when a download stops for any reason.
 	finished func(id uint64)
 }
 
 func newEngine(log io.Writer) *engine {
-	return &engine{inbox: media.NewInbox(100), log: log, now: time.Now, dir: downloadDir()}
+	return &engine{inbox: media.NewInbox(100), log: log, now: time.Now, dir: downloadDir(), ffmpeg: stream.FFmpeg()}
 }
 
 type idRequest struct {
