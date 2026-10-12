@@ -8,6 +8,7 @@ import (
 
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/ipc"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/media"
+	"github.com/xoGUYFAWKSxo/internet-downloader/internal/probe"
 )
 
 // App is bound to the frontend; its exported methods become TypeScript calls.
@@ -58,18 +59,43 @@ func statusFromPong(resp ipc.Message, err error) EngineStatus {
 // ReceivedMedia lists the streams the browser extension has sent, newest
 // first. Downloading them comes in a later phase.
 func (a *App) ReceivedMedia() ([]media.Summary, error) {
+	return summariesFrom(a.call(ipc.Message{Type: "media.list"}))
+}
+
+// CheckServer asks the engine to probe the server of a received stream. The
+// engine gives up after 30 seconds, so this doesn't hang.
+func (a *App) CheckServer(id uint64) (*probe.Result, error) {
+	p, _ := json.Marshal(map[string]uint64{"id": id})
+	return probeFrom(a.call(ipc.Message{Type: "media.probe", Payload: p}))
+}
+
+func (a *App) call(m ipc.Message) (ipc.Message, error) {
 	name, err := ipc.PipeName()
 	if err != nil {
-		return nil, err
+		return ipc.Message{}, err
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, 2*time.Second)
 	defer cancel()
 	c, err := ipc.Dial(ctx, name)
 	if err != nil {
-		return nil, errors.New("the download engine isn't running")
+		return ipc.Message{}, errors.New("the download engine isn't running")
 	}
 	defer c.Close()
-	return summariesFrom(c.Call(ipc.Message{Type: "media.list"}))
+	return c.Call(m)
+}
+
+func probeFrom(resp ipc.Message, err error) (*probe.Result, error) {
+	if err == nil && resp.Error != "" {
+		err = errors.New(resp.Error)
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out probe.Result
+	if err := json.Unmarshal(resp.Payload, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 func summariesFrom(resp ipc.Message, err error) ([]media.Summary, error) {

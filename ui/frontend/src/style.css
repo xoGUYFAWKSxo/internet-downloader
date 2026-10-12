@@ -53,3 +53,5 @@ h2 { font-size: 15px; font-weight: 600; margin: 24px 0 8px; }
 #media .title { display: flex; gap: 8px; align-items: baseline; }
 #media .kind { font-size: 12px; font-weight: 600; color: var(--muted); }
 #media .url, #media .meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+#media li button { margin-top: 6px; padding: 3px 10px; }
+#media .probe { font-size: 12px; margin-top: 6px; }
