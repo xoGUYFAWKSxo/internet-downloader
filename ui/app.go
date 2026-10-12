@@ -4,8 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"time"
 
+	"github.com/xoGUYFAWKSxo/internet-downloader/internal/fetch"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/ipc"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/media"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/probe"
@@ -57,7 +61,7 @@ func statusFromPong(resp ipc.Message, err error) EngineStatus {
 }
 
 // ReceivedMedia lists the streams the browser extension has sent, newest
-// first. Downloading them comes in a later phase.
+// first.
 func (a *App) ReceivedMedia() ([]media.Summary, error) {
 	return summariesFrom(a.call(ipc.Message{Type: "media.list"}))
 }
@@ -67,6 +71,57 @@ func (a *App) ReceivedMedia() ([]media.Summary, error) {
 func (a *App) CheckServer(id uint64) (*probe.Result, error) {
 	p, _ := json.Marshal(map[string]uint64{"id": id})
 	return probeFrom(a.call(ipc.Message{Type: "media.probe", Payload: p}))
+}
+
+// Download asks the engine to download a received item into the Downloads
+// folder. It returns the download's id at once; Downloads shows progress.
+func (a *App) Download(id uint64) (uint64, error) {
+	var out struct {
+		ID uint64 `json:"id"`
+	}
+	err := decode(a.call(ipc.Message{Type: "media.download", Payload: idPayload(id)}))(&out)
+	return out.ID, err
+}
+
+// Downloads lists this session's downloads, newest first.
+func (a *App) Downloads() ([]fetch.Status, error) {
+	var out []fetch.Status
+	return out, decode(a.call(ipc.Message{Type: "downloads.list"}))(&out)
+}
+
+func (a *App) CancelDownload(id uint64) error {
+	return decode(a.call(ipc.Message{Type: "downloads.cancel", Payload: idPayload(id)}))(nil)
+}
+
+// ShowInFolder opens Explorer with the file selected.
+func (a *App) ShowInFolder(path string) error {
+	if !filepath.IsAbs(path) {
+		return errors.New("not a file path")
+	}
+	if _, err := os.Stat(path); err != nil {
+		return errors.New("the file isn't there any more")
+	}
+	// Explorer's exit code is 1 even when it worked, so it isn't checked.
+	exec.Command("explorer.exe", "/select,", path).Start()
+	return nil
+}
+
+func idPayload(id uint64) json.RawMessage {
+	p, _ := json.Marshal(map[string]uint64{"id": id})
+	return p
+}
+
+// decode turns an engine reply into an error or a filled value.
+func decode(resp ipc.Message, err error) func(v any) error {
+	return func(v any) error {
+		if err == nil && resp.Error != "" {
+			err = errors.New(resp.Error)
+		}
+		if err != nil || v == nil {
+			return err
+		}
+		return json.Unmarshal(resp.Payload, v)
+	}
 }
 
 func (a *App) call(m ipc.Message) (ipc.Message, error) {

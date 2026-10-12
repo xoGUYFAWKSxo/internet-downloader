@@ -3,9 +3,14 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/xoGUYFAWKSxo/internet-downloader/internal/fetch"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/ipc"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/media"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/probe"
@@ -100,5 +105,90 @@ func TestProbeReceivedMedia(t *testing.T) {
 
 	if r := e.handle(ipc.Message{Type: "media.probe", Payload: []byte(`{"id":999}`)}); r.Type != "error" || !strings.Contains(r.Error, "no longer") {
 		t.Fatalf("missing id: %+v", r)
+	}
+}
+
+func TestDownloadReceivedMedia(t *testing.T) {
+	s := testserver.Start(t, testserver.Content(3<<20))
+	var log bytes.Buffer
+	e := newEngine(&log)
+	e.probe = probe.Options{RootCAs: s.RootCAs}
+	e.dir = t.TempDir()
+	stopped := make(chan uint64, 1)
+	e.finished = func(id uint64) { stopped <- id }
+
+	added := e.handle(ext(`{"type":"media","media":{"url":"` + s.H2 + `?token=SECRETTOKEN","kind":"video",
+		"cookies":[{"name":"sid","value":"SECRETCOOKIE"}]}}`))
+	var item idRequest
+	json.Unmarshal(added.Payload, &item)
+	resp := e.handle(ipc.Message{Type: "media.download", Payload: payload(item)})
+	var job idRequest
+	if err := json.Unmarshal(resp.Payload, &job); err != nil || resp.Type != "media.download" {
+		t.Fatalf("got %+v", resp)
+	}
+	if id := <-stopped; id != job.ID {
+		t.Fatalf("finished %d, want %d", id, job.ID)
+	}
+
+	var list []fetch.Status
+	json.Unmarshal(e.handle(ipc.Message{Type: "downloads.list"}).Payload, &list)
+	d := list[0]
+	if d.State != fetch.Done || d.Done != 3<<20 || d.Size != 3<<20 || d.Name != "file.bin" || d.Protocol != probe.HTTP3 || d.Streams != 8 {
+		t.Fatalf("download %+v", d)
+	}
+	if got, _ := os.ReadFile(d.Path); !bytes.Equal(got, s.Body) {
+		t.Fatal("saved file differs")
+	}
+	for _, secret := range []string{"SECRETTOKEN", "SECRETCOOKIE"} {
+		if strings.Contains(log.String(), secret) {
+			t.Fatalf("%s leaked: %s", secret, log.String())
+		}
+	}
+}
+
+func TestDownloadRefusals(t *testing.T) {
+	e := newEngine(&bytes.Buffer{})
+	added := e.handle(ext(`{"type":"media","media":{"url":"https://x.example/a.m3u8","kind":"hls","manifest":"#EXTM3U\n"}}`))
+	if r := e.handle(ipc.Message{Type: "media.download", Payload: added.Payload}); r.Type != "error" || !strings.Contains(r.Error, "HLS and DASH") {
+		t.Fatalf("hls: %+v", r)
+	}
+	if r := e.handle(ipc.Message{Type: "media.download", Payload: []byte(`{"id":999}`)}); r.Type != "error" || !strings.Contains(r.Error, "no longer") {
+		t.Fatalf("missing: %+v", r)
+	}
+	if r := e.handle(ipc.Message{Type: "downloads.cancel", Payload: []byte(`{"id":999}`)}); r.Type != "error" {
+		t.Fatalf("cancel missing: %+v", r)
+	}
+}
+
+func TestCancelDownload(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "10000000")
+		w.Write(make([]byte, 1000))
+		w.(http.Flusher).Flush()
+		<-release
+	}))
+	defer srv.Close()
+	defer close(release)
+	e := newEngine(&bytes.Buffer{})
+	e.dir = t.TempDir()
+	stopped := make(chan uint64, 1)
+	e.finished = func(id uint64) { stopped <- id }
+	id := e.download(probe.Request{URL: srv.URL + "/big.bin"})
+	for d := e.dl.list()[0]; d.State != fetch.Downloading; d = e.dl.list()[0] {
+		if d.State != fetch.Checking {
+			t.Fatalf("never started: %+v", d)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if r := e.handle(ipc.Message{Type: "downloads.cancel", Payload: payload(idRequest{id})}); r.Type != "downloads.cancel" {
+		t.Fatalf("cancel: %+v", r)
+	}
+	<-stopped
+	if d := e.dl.list()[0]; d.State != fetch.Cancelled {
+		t.Fatalf("got %+v", d)
+	}
+	if entries, _ := os.ReadDir(e.dir); len(entries) != 0 {
+		t.Fatalf("left %v", entries)
 	}
 }

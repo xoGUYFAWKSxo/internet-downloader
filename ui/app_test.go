@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/xoGUYFAWKSxo/internet-downloader/internal/fetch"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/ipc"
 )
 
@@ -40,5 +41,22 @@ func TestProbeFrom(t *testing.T) {
 	}
 	if _, err := probeFrom(ipc.Message{Type: "error", Error: "The server answered 404 Not Found."}, nil); err == nil || err.Error() != "The server answered 404 Not Found." {
 		t.Fatalf("engine error: %v", err)
+	}
+}
+
+func TestDecode(t *testing.T) {
+	var list []fetch.Status
+	err := decode(ipc.Message{Type: "downloads.list", Payload: []byte(`[{"id":1,"name":"a.mp4","size":10,"done":4,"state":"downloading"}]`)}, nil)(&list)
+	if err != nil || len(list) != 1 || list[0].Done != 4 || list[0].State != fetch.Downloading {
+		t.Fatalf("got %+v, %v", list, err)
+	}
+	if err := decode(ipc.Message{Type: "error", Error: "nope"}, nil)(nil); err == nil || err.Error() != "nope" {
+		t.Fatalf("engine error: %v", err)
+	}
+	if err := decode(ipc.Message{}, errors.New("pipe"))(&list); err == nil {
+		t.Fatal("call error lost")
+	}
+	if err := (&App{}).ShowInFolder("relative.txt"); err == nil {
+		t.Fatal("relative path accepted")
 	}
 }

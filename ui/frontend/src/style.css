@@ -42,8 +42,8 @@ button { padding: 6px 14px; font: inherit; }
 .bad { color: var(--bad); }
 .note { color: var(--muted); margin-top: 16px; }
 h2 { font-size: 15px; font-weight: 600; margin: 24px 0 8px; }
-#media { list-style: none; margin: 0; padding: 0; }
-#media li {
+#media, #downloads { list-style: none; margin: 0; padding: 0; }
+#media li, #downloads li {
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -55,3 +55,11 @@ h2 { font-size: 15px; font-weight: 600; margin: 24px 0 8px; }
 #media .url, #media .meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 #media li button { margin-top: 6px; padding: 3px 10px; }
 #media .probe { font-size: 12px; margin-top: 6px; }
+#downloads .title { display: flex; gap: 8px; align-items: baseline; }
+#downloads .kind { font-size: 12px; font-weight: 600; color: var(--muted); }
+#downloads .kind.ok { color: var(--ok); }
+#downloads .kind.bad { color: var(--bad); }
+#downloads .meta { color: var(--muted); font-size: 12px; }
+#downloads progress { width: 100%; height: 6px; margin-top: 6px; }
+#downloads li button { margin-top: 6px; padding: 3px 10px; }
+#downloads .probe { font-size: 12px; margin-top: 6px; }
