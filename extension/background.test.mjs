@@ -55,6 +55,7 @@ test("lists playlists and large media, skips segments and errors", async () => {
   request("4", "https://cdn.example/gone.m3u8", [], [], 7, 404);
   request("5", "https://cdn.example/film.mp4", [], [{ name: "Content-Range", value: "bytes 0-99/900000000" }]);
   request("6", "https://cdn.example/other-tab.mp4", [], [], -1);
+  request("7", "https://www.example/sounds/success.mp3", [], [{ name: "Content-Type", value: "audio/mpeg" }]);
   await tick();
   const list = await ask({ type: "list", tabId: 7 });
   assert.deepEqual(list.map((i) => i.url), ["https://cdn.example/film.mp4", "https://cdn.example/master.m3u8?t=1"]);

@@ -66,9 +66,12 @@ export function replayHeaders(requestHeaders) {
 }
 
 // worthListing drops short audio/video clips; playlists are always listed.
+// A file of unknown size is skipped too: sites serve their UI sounds that way
+// (YouTube's failure.mp3, success.mp3 and so on), while real video files
+// almost always state a size or answer a range request.
 export function worthListing(kind, size) {
   if (kind === "hls" || kind === "dash") return true;
-  return size === null || size >= MIN_MEDIA_BYTES;
+  return size !== null && size >= MIN_MEDIA_BYTES;
 }
 
 export function fileName(url) {
