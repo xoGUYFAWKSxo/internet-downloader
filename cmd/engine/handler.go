@@ -91,6 +91,16 @@ func (e *engine) handle(m ipc.Message) ipc.Message {
 		return ipc.Message{Type: "media.download", Payload: payload(idRequest{id})}
 	case "downloads.list":
 		return ipc.Message{Type: "downloads.list", Payload: payload(e.dl.list())}
+	case "downloads.detail":
+		var in idRequest
+		if err := json.Unmarshal(m.Payload, &in); err != nil {
+			return fail("invalid request: " + err.Error())
+		}
+		d, err := e.detail(in.ID)
+		if err != nil {
+			return fail(err.Error())
+		}
+		return ipc.Message{Type: "downloads.detail", Payload: payload(d)}
 	case "downloads.cancel":
 		var in idRequest
 		if err := json.Unmarshal(m.Payload, &in); err != nil {

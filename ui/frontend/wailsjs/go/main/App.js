@@ -22,6 +22,10 @@ export function Download(arg1) {
   return window['go']['main']['App']['Download'](arg1);
 }
 
+export function DownloadDetail(arg1) {
+  return window['go']['main']['App']['DownloadDetail'](arg1);
+}
+
 export function Downloads() {
   return window['go']['main']['App']['Downloads']();
 }
@@ -32,6 +36,10 @@ export function OpenFile(arg1) {
 
 export function PauseDownload(arg1) {
   return window['go']['main']['App']['PauseDownload'](arg1);
+}
+
+export function ProgressID() {
+  return window['go']['main']['App']['ProgressID']();
 }
 
 export function ReceivedMedia() {
@@ -46,6 +54,14 @@ export function ResumeDownload(arg1) {
   return window['go']['main']['App']['ResumeDownload'](arg1);
 }
 
+export function ShowDetails(arg1) {
+  return window['go']['main']['App']['ShowDetails'](arg1);
+}
+
 export function ShowInFolder(arg1) {
   return window['go']['main']['App']['ShowInFolder'](arg1);
+}
+
+export function ShowProgress(arg1) {
+  return window['go']['main']['App']['ShowProgress'](arg1);
 }

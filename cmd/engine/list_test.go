@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net/http"
 	"os"
@@ -126,5 +127,63 @@ func TestAddURL(t *testing.T) {
 	}
 	if len(e.dl.list()) != 0 {
 		t.Fatal("a bad address was added")
+	}
+}
+
+// The progress window sees the streams and the written parts while a file
+// downloads, what is kept once it is stopped, and the whole file at the end.
+func TestDetail(t *testing.T) {
+	body := testserver.Content(8 << 20)
+	release := make(chan struct{})
+	srv, _ := rangeServer(t, body, func(n int, w http.ResponseWriter, r *http.Request) io.Writer {
+		select {
+		case <-release:
+			return w
+		default:
+		}
+		return &stall{w: w, n: 1 << 20, ctx: r.Context(), release: release}
+	})
+	e, stopped := testEngine(t, openJournal(t, filepath.Join(t.TempDir(), "d.db")))
+	if r := e.handle(ipc.Message{Type: "downloads.detail", Payload: payload(idRequest{99})}); r.Type != "error" {
+		t.Fatalf("unknown id: %+v", r)
+	}
+	id, _ := e.addURL(srv.URL + "/file.bin")
+	waitFor(t, e, func(d fetch.Status) bool { return d.State == fetch.Downloading && d.Done >= 4<<20 })
+	get := func() fetch.Detail {
+		t.Helper()
+		r := e.handle(ipc.Message{Type: "downloads.detail", Payload: payload(idRequest{id})})
+		var d fetch.Detail
+		if r.Type != "downloads.detail" || json.Unmarshal(r.Payload, &d) != nil {
+			t.Fatalf("detail: %+v", r)
+		}
+		return d
+	}
+	spans := func(d fetch.Detail) (n int64) {
+		for _, s := range d.Have {
+			n += s.End - s.Start
+		}
+		return n
+	}
+	d := get()
+	if len(d.Conns) == 0 || d.Resume != "yes" || d.Host == "" || strings.Contains(d.Host, "/") || spans(d) < d.Status.Done {
+		t.Fatalf("while running: %+v", d)
+	}
+	var got int64
+	for _, c := range d.Conns {
+		got += c.Got
+	}
+	if got < 4<<20 {
+		t.Fatalf("streams wrote %d bytes: %+v", got, d.Conns)
+	}
+	e.pauseDownload(id)
+	<-stopped
+	if d = get(); len(d.Conns) != 0 || d.Status.State != fetch.Paused || d.Resume != "yes" || spans(d) == 0 || spans(d) != d.Status.Done {
+		t.Fatalf("stopped: %+v", d)
+	}
+	close(release)
+	e.resumeDownload(id)
+	<-stopped
+	if d = get(); d.Status.State != fetch.Done || len(d.Have) != 1 || spans(d) != int64(len(body)) {
+		t.Fatalf("done: %+v", d)
 	}
 }

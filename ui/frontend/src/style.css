@@ -113,8 +113,8 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .empty { color: var(--muted); padding: 24px; margin: 0; text-align: center; }
 
 /* Download table. */
-table { border-collapse: collapse; table-layout: fixed; width: max-content; min-width: 100%; }
-th {
+#table { border-collapse: collapse; table-layout: fixed; width: max-content; min-width: 100%; }
+#table th {
     position: sticky;
     top: 0;
     z-index: 1;
@@ -128,20 +128,20 @@ th {
     overflow: hidden;
     text-overflow: ellipsis;
 }
-th:hover { background: var(--hover); }
-th .arrow { color: var(--muted); font-size: 10px; margin-left: 4px; }
-th .grip { position: absolute; top: 0; right: -3px; width: 7px; height: 100%; cursor: col-resize; z-index: 2; }
-td {
+#table th:hover { background: var(--hover); }
+#table th .arrow { color: var(--muted); font-size: 10px; margin-left: 4px; }
+#table th .grip { position: absolute; top: 0; right: -3px; width: 7px; height: 100%; cursor: col-resize; z-index: 2; }
+#table td {
     padding: 3px 8px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     border-bottom: 1px solid transparent;
 }
-td.num { text-align: right; font-variant-numeric: tabular-nums; }
-tbody tr:hover { background: var(--hover); }
-tbody tr.selected { background: var(--sel); color: var(--sel-text); }
-tbody tr.selected .note, tbody tr.selected .bad, tbody tr.selected .ok { color: inherit; }
+#table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+#table tbody tr:hover { background: var(--hover); }
+#table tbody tr.selected { background: var(--sel); color: var(--sel-text); }
+#table tbody tr.selected .note, #table tbody tr.selected .bad, #table tbody tr.selected .ok { color: inherit; }
 .ftype {
     display: inline-block;
     width: 14px;
@@ -223,3 +223,30 @@ dialog .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top
 dialog .buttons button { min-width: 84px; padding: 5px 12px; }
 dialog .bad:empty { display: none; }
 button.primary { background: var(--accent); color: #fff; border: 1px solid var(--accent); border-radius: 3px; }
+
+/* Hidden until main.ts knows which window this is. */
+body:not(.ready) { visibility: hidden; }
+
+/* --- Progress window --- */
+body.progress-window { background: var(--chrome); }
+.pw { display: flex; flex-direction: column; padding: 12px 14px; gap: 10px; height: 100%; }
+.pw-name { margin: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pw-info { border-collapse: collapse; width: 100%; table-layout: fixed; }
+.pw-info th { width: 130px; text-align: left; font-weight: normal; color: var(--muted); padding: 2px 0; }
+.pw-info td { padding: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.pw-bar { height: 16px; border: 1px solid var(--border); background: var(--bar-bg); border-radius: 2px; overflow: hidden; }
+.pw-bar div { height: 100%; width: 0; background: var(--bar); transition: width 0.4s; }
+.pw-bar div.bad { background: var(--bad); }
+.pw-buttons { display: flex; gap: 8px; }
+.pw-buttons .spacer { flex: 1; }
+.pw-buttons button { min-width: 84px; padding: 4px 12px; }
+#pw-more { display: flex; flex-direction: column; gap: 6px; min-height: 0; flex: 1; }
+#pw-more[hidden] { display: none; }
+#pw-map { width: 100%; height: 18px; border: 1px solid var(--border); display: block; }
+#pw-map[hidden] { display: none; }
+#pw-map-note { margin: 0; font-size: 12px; }
+.pw-conns-wrap { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--border); background: var(--bg); }
+.pw-conns { width: 100%; border-collapse: collapse; }
+.pw-conns th { position: sticky; top: 0; background: var(--chrome); text-align: left; font-weight: normal; padding: 3px 8px; border-bottom: 1px solid var(--border); }
+.pw-conns td { padding: 2px 8px; }
+.pw-conns .num { text-align: right; width: 1%; white-space: nowrap; font-variant-numeric: tabular-nums; }
