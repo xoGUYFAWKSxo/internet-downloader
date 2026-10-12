@@ -73,6 +73,46 @@ func Create(dir, base string, size int64) (*File, error) {
 	return o, nil
 }
 
+// Open reopens a .part file left by an earlier run to finish it. have lists
+// the spans known to be on disk; the rest is fetched again.
+func Open(part string, size int64, have []Range) (*File, error) {
+	if !strings.HasSuffix(part, partSuffix) || size < 0 {
+		return nil, fmt.Errorf("%s isn't an unfinished download", filepath.Base(part))
+	}
+	f, err := os.OpenFile(part, os.O_RDWR, 0)
+	if err != nil {
+		return nil, err
+	}
+	if fi, err := f.Stat(); err != nil || fi.Size() != size {
+		f.Close()
+		return nil, fmt.Errorf("%s isn't the size it was", filepath.Base(part))
+	}
+	name := strings.TrimSuffix(filepath.Base(part), partSuffix)
+	o := &File{f: f, dir: filepath.Dir(part), base: name, name: name, size: size}
+	for _, r := range have {
+		if r.Start >= 0 && r.End <= size && r.Start < r.End {
+			o.mark(r)
+		}
+	}
+	return o, nil
+}
+
+// Path is where the unfinished file is (the .part file).
+func (o *File) Path() string { return o.f.Name() }
+
+// Have lists the spans written so far, sorted and merged.
+func (o *File) Have() []Range {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return append([]Range(nil), o.have...)
+}
+
+// Sync flushes what has been written to the disk.
+func (o *File) Sync() error { return o.f.Sync() }
+
+// Close closes the file and keeps the .part, so it can be finished later.
+func (o *File) Close() error { return o.f.Close() }
+
 // Name is the file's final name (without .part).
 func (o *File) Name() string { return o.name }
 

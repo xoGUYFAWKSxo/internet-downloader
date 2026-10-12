@@ -12,17 +12,33 @@ import (
 	"golang.org/x/sys/windows"
 
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/fetch"
+	"github.com/xoGUYFAWKSxo/internet-downloader/internal/journal"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/media"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/outfile"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/probe"
 )
+
+// errShutdown is why downloads stop when the engine quits.
+var errShutdown = errors.New("the app was closed")
+
+// keepDownloads is how many downloads the saved list holds.
+const keepDownloads = 200
 
 type job struct {
 	fetch.Status
 	host string // for the log; never the full address, which can hold tokens
 	// progress, while set, gives the bytes and segments written so far.
 	progress func() (int64, int)
-	cancel   context.CancelFunc
+	cancel   context.CancelCauseFunc
+
+	// To resume a file: its request (nil for streams, which can't resume),
+	// the unfinished file, the server's size and validator it came from,
+	// and the spans known to be on disk.
+	req       *probe.Request
+	part      string
+	size      int64
+	validator string
+	have      []outfile.Range
 }
 
 type downloads struct {
@@ -86,88 +102,280 @@ func (e *engine) startDownload(id uint64) (uint64, error) {
 }
 
 // start adds a job for address u and runs it in the background; it returns
-// the job's id at once.
-func (e *engine) start(u string, run func(context.Context, *job)) uint64 {
-	ctx, cancel := context.WithCancel(context.Background())
+// the job's id at once. req is kept to resume the job, or nil.
+func (e *engine) start(u string, req *probe.Request, run func(context.Context, *job)) uint64 {
 	e.dl.mu.Lock()
 	e.dl.next++
-	j := &job{Status: fetch.Status{ID: e.dl.next, Name: hostOf(u), Size: -1, State: fetch.Checking, Started: e.now().Format(time.RFC3339)}, host: hostOf(u), cancel: cancel}
+	j := &job{Status: fetch.Status{ID: e.dl.next, Name: hostOf(u), Size: -1, State: fetch.Checking, Started: e.now().Format(time.RFC3339)}, host: hostOf(u), req: req}
 	e.dl.jobs = append(e.dl.jobs, j)
 	e.dl.mu.Unlock()
+	if e.jr != nil {
+		if err := e.jr.Add(j.Status, req); err != nil {
+			fmt.Fprintf(e.log, "download %d (%s): couldn't save it to the list: %v\n", j.ID, j.host, err)
+		}
+	}
+	e.launch(j, run)
+	return j.ID
+}
+
+func (e *engine) launch(j *job, run func(context.Context, *job)) {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	e.dl.update(j, func(j *job) { j.cancel = cancel })
 	go func() {
-		defer cancel()
+		defer cancel(nil)
 		run(ctx, j)
 		if e.finished != nil {
 			e.finished(j.ID)
 		}
 	}()
-	return j.ID
 }
 
 // download starts a plain file download.
 func (e *engine) download(r probe.Request) uint64 {
-	return e.start(r.URL, func(ctx context.Context, j *job) {
-		path, size, err := e.getFile(ctx, j, r, e.dir, func(res *probe.Result, out *outfile.File) {
-			e.dl.update(j, func(j *job) {
-				j.Name, j.Size, j.State = out.Name(), res.Size, fetch.Downloading
-				j.Protocol, j.Mode, j.Streams = res.Protocol, res.Plan.Mode, res.Plan.Streams
-				j.progress = func() (int64, int) { return out.Written(), 0 }
-			})
-		})
-		if err != nil {
-			e.fail(j, err)
-			return
-		}
-		e.done(j, path, size)
-	})
+	return e.start(r.URL, &r, e.runFile)
 }
 
-// fail records why j stopped.
-func (e *engine) fail(j *job, err error) {
-	state := fetch.Failed
-	if errors.Is(err, context.Canceled) {
-		state, err = fetch.Cancelled, errors.New("cancelled")
-	}
-	fmt.Fprintf(e.log, "download %d (%s): %s: %v\n", j.ID, j.host, state, err)
-	e.dl.update(j, func(j *job) {
-		j.State, j.Error = state, sentence(err)
-		if j.progress != nil {
-			j.Done, j.PartsDone = j.progress()
+// runFile downloads a file. A dropped connection is retried after a pause,
+// keeping the bytes already in.
+func (e *engine) runFile(ctx context.Context, j *job) {
+	for try := 0; ; try++ {
+		path, size, err := e.getResumable(ctx, j)
+		if err == nil {
+			e.done(j, path, size)
+			return
 		}
-		j.progress = nil
+		if !fetch.Dropped(err) || try >= len(e.retries) || ctx.Err() != nil {
+			e.stopped(ctx, j, err)
+			return
+		}
+		wait := e.retries[try]
+		fmt.Fprintf(e.log, "download %d (%s): %v; trying again in %s\n", j.ID, j.host, err, wait)
+		e.dl.update(j, func(j *job) {
+			j.State, j.Streams = fetch.Waiting, 0
+			j.Error = fmt.Sprintf("The connection dropped. Trying again in %d seconds.", int(wait.Seconds()))
+			if j.progress != nil {
+				j.Done, j.PartsDone = j.progress()
+			}
+			j.progress = nil
+		})
+		e.save(j)
+		select {
+		case <-time.After(wait):
+		case <-ctx.Done():
+			e.stopped(ctx, j, ctx.Err())
+			return
+		}
+		e.dl.update(j, func(j *job) { j.State, j.Error = fetch.Checking, "" })
+	}
+}
+
+// getResumable probes j's file and downloads it, carrying on from j's
+// unfinished file when the server still has the same file.
+func (e *engine) getResumable(ctx context.Context, j *job) (string, int64, error) {
+	res, name, err := e.probeFile(ctx, *j.req)
+	if err != nil {
+		return "", 0, err
+	}
+	v := fetch.Validator(res)
+	resumable := v != "" && res.Size > 0 && res.Plan.Mode != probe.Single
+	var out *outfile.File
+	if j.part != "" {
+		if resumable && j.size == res.Size && j.validator == v {
+			if out, err = outfile.Open(j.part, res.Size, j.have); err != nil {
+				fmt.Fprintf(e.log, "download %d (%s): starting over: %v\n", j.ID, j.host, err)
+			}
+		} else {
+			fmt.Fprintf(e.log, "download %d (%s): the server's file changed; starting over\n", j.ID, j.host)
+		}
+		if out == nil {
+			os.Remove(j.part)
+		}
+	}
+	if out == nil {
+		if out, err = outfile.Create(e.dir, name, res.Size); err != nil {
+			return "", 0, err
+		}
+		if !resumable {
+			v = ""
+		}
+		if e.jr != nil {
+			if err := e.jr.SetFile(j.ID, out.Path(), res.Size, v); err != nil {
+				fmt.Fprintf(e.log, "download %d (%s): couldn't save its file: %v\n", j.ID, j.host, err)
+			}
+		}
+	}
+	e.dl.update(j, func(j *job) {
+		j.part, j.size, j.validator, j.have = out.Path(), res.Size, v, nil
+		j.Name, j.Size, j.State, j.Error, j.Resumable = out.Name(), res.Size, fetch.Downloading, "", false
+		j.Protocol, j.Mode, j.Streams = res.Protocol, res.Plan.Mode, res.Plan.Streams
+		j.progress = func() (int64, int) { return out.Written(), 0 }
 	})
+	e.save(j)
+	fmt.Fprintf(e.log, "download %d (%s): %s, %s, %d streams, %d bytes, %d already in\n", j.ID, j.host, res.Protocol, res.Plan.Mode, res.Plan.Streams, res.Size, out.Written())
+
+	stop := e.checkpoints(j, out)
+	err = fetch.Download(ctx, *j.req, res, out, fetch.Options{RootCAs: e.probe.RootCAs, OnLimit: e.onLimit(j)})
+	stop()
+	if err == nil {
+		var path string
+		if path, err = out.Finish(); err == nil {
+			return path, out.Written(), nil
+		}
+	}
+	// Keep what is in unless it can't be used again.
+	if !resumable || errors.Is(err, fetch.ErrChanged) || cancelledByUser(ctx) {
+		out.Abort()
+		e.dl.update(j, func(j *job) { j.part, j.have = "", nil })
+		return "", 0, err
+	}
+	e.commit(j, out)
+	out.Close()
+	have := out.Have()
+	e.dl.update(j, func(j *job) { j.have = have })
+	return "", 0, err
+}
+
+// checkpoints commits j's progress every few seconds until stop is called.
+func (e *engine) checkpoints(j *job, out *outfile.File) (stop func()) {
+	if e.jr == nil {
+		return func() {}
+	}
+	quit, ended := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(ended)
+		t := time.NewTicker(e.checkpointEvery)
+		defer t.Stop()
+		for {
+			select {
+			case <-quit:
+				return
+			case <-t.C:
+				e.commit(j, out)
+			}
+		}
+	}()
+	return func() { close(quit); <-ended }
+}
+
+// commit flushes out to disk, then records the spans that were written
+// before the flush: only bytes really on the disk are committed.
+func (e *engine) commit(j *job, out *outfile.File) {
+	if e.jr == nil {
+		return
+	}
+	have := out.Have()
+	err := out.Sync()
+	if err == nil {
+		err = e.jr.Commit(j.ID, have)
+	}
+	if err != nil {
+		fmt.Fprintf(e.log, "download %d (%s): couldn't save progress: %v\n", j.ID, j.host, err)
+	}
+}
+
+func cancelledByUser(ctx context.Context) bool {
+	return ctx.Err() != nil && !errors.Is(context.Cause(ctx), errShutdown)
+}
+
+// stopped records why j stopped, and whether it can be resumed.
+func (e *engine) stopped(ctx context.Context, j *job, err error) {
+	byUser := cancelledByUser(ctx)
+	shutdown := errors.Is(context.Cause(ctx), errShutdown)
+	e.dl.mu.Lock()
+	canResume := e.jr != nil && j.req != nil && j.part != "" && j.validator != "" && !byUser
+	if !canResume && j.part != "" {
+		os.Remove(j.part)
+		j.part, j.have = "", nil
+	}
+	state := fetch.Failed
+	switch {
+	case byUser:
+		state, err = fetch.Cancelled, errors.New("cancelled")
+	case shutdown && canResume:
+		state, err = fetch.Paused, errors.New("paused when the app was closed")
+	case shutdown:
+		err = errors.New("stopped when the app was closed; send it from the browser again")
+	}
+	j.State, j.Error, j.Resumable, j.Streams = state, sentence(err), canResume, 0
+	if j.progress != nil {
+		j.Done, j.PartsDone = j.progress()
+	}
+	j.progress = nil
+	e.dl.mu.Unlock()
+	fmt.Fprintf(e.log, "download %d (%s): %s: %v\n", j.ID, j.host, state, err)
+	if canResume {
+		e.save(j)
+	} else {
+		e.end(j)
+	}
 }
 
 // done records where j's file went.
 func (e *engine) done(j *job, path string, size int64) {
 	fmt.Fprintf(e.log, "download %d (%s): done, %d bytes\n", j.ID, j.host, size)
 	e.dl.update(j, func(j *job) {
-		j.State, j.Path, j.Name, j.Done = fetch.Done, path, filepath.Base(path), size
+		j.State, j.Path, j.Name, j.Done, j.Error = fetch.Done, path, filepath.Base(path), size, ""
 		j.Size, j.PartsDone, j.progress = size, j.Parts, nil
+		j.part, j.have = "", nil
 	})
+	e.end(j)
 }
 
-// getFile probes r and downloads it into dir under the server's file name.
-// started is called once the file exists. A failed download deletes its
-// .part file: nothing can resume it until the Phase 5 range log exists.
-func (e *engine) getFile(ctx context.Context, j *job, r probe.Request, dir string, started func(*probe.Result, *outfile.File)) (string, int64, error) {
-	host := hostOf(r.URL)
+// save writes j's status to the saved list.
+func (e *engine) save(j *job) {
+	if e.jr == nil {
+		return
+	}
+	e.dl.mu.Lock()
+	s := j.Status
+	e.dl.mu.Unlock()
+	if err := e.jr.SetStatus(s); err != nil {
+		fmt.Fprintf(e.log, "download %d (%s): couldn't save it to the list: %v\n", j.ID, j.host, err)
+	}
+}
+
+// end saves j's final status and forgets how to resume it.
+func (e *engine) end(j *job) {
+	if e.jr == nil {
+		return
+	}
+	e.dl.mu.Lock()
+	s := j.Status
+	e.dl.mu.Unlock()
+	if err := e.jr.End(s); err != nil {
+		fmt.Fprintf(e.log, "download %d (%s): couldn't save it to the list: %v\n", j.ID, j.host, err)
+	}
+}
+
+// probeFile probes r and picks the file name.
+func (e *engine) probeFile(ctx context.Context, r probe.Request) (*probe.Result, string, error) {
 	pctx, pcancel := context.WithTimeout(ctx, 30*time.Second)
 	res, err := probe.Probe(pctx, r, e.probe)
 	pcancel()
 	if err != nil {
-		return "", 0, err
+		return nil, "", err
 	}
 	name := res.FileName
 	if name == "" {
-		name = host
+		name = hostOf(r.URL)
+	}
+	return res, name, nil
+}
+
+// getFile probes r and downloads it into dir under the server's file name,
+// for one track of a stream. started is called once the file exists. A
+// failed download deletes its .part file.
+func (e *engine) getFile(ctx context.Context, j *job, r probe.Request, dir string, started func(*probe.Result, *outfile.File)) (string, int64, error) {
+	res, name, err := e.probeFile(ctx, r)
+	if err != nil {
+		return "", 0, err
 	}
 	out, err := outfile.Create(dir, name, res.Size)
 	if err != nil {
 		return "", 0, err
 	}
 	started(res, out)
-	fmt.Fprintf(e.log, "download %d (%s): %s, %s, %d streams, %d bytes\n", j.ID, host, res.Protocol, res.Plan.Mode, res.Plan.Streams, res.Size)
+	fmt.Fprintf(e.log, "download %d (%s): %s, %s, %d streams, %d bytes\n", j.ID, hostOf(r.URL), res.Protocol, res.Plan.Mode, res.Plan.Streams, res.Size)
 	err = fetch.Download(ctx, r, res, out, fetch.Options{RootCAs: e.probe.RootCAs, OnLimit: e.onLimit(j)})
 	var path string
 	if err == nil {
@@ -187,13 +395,119 @@ func (e *engine) onLimit(j *job) func(int) {
 	}
 }
 
+// cancelDownload stops a running download, or throws away the unfinished
+// file of one that was waiting to be resumed.
 func (e *engine) cancelDownload(id uint64) error {
 	j := e.dl.find(id)
 	if j == nil {
 		return errors.New("That download is no longer in the list.")
 	}
-	j.cancel()
+	e.dl.mu.Lock()
+	if !j.Resumable {
+		cancel := j.cancel
+		e.dl.mu.Unlock()
+		if cancel != nil {
+			cancel(nil)
+		}
+		return nil
+	}
+	if j.part != "" {
+		os.Remove(j.part)
+	}
+	j.part, j.have, j.Resumable = "", nil, false
+	j.State, j.Error = fetch.Cancelled, "Cancelled."
+	e.dl.mu.Unlock()
+	fmt.Fprintf(e.log, "download %d (%s): unfinished file discarded\n", j.ID, j.host)
+	e.end(j)
 	return nil
+}
+
+// resumeDownload carries on with a paused or failed download.
+func (e *engine) resumeDownload(id uint64) error {
+	j := e.dl.find(id)
+	if j == nil {
+		return errors.New("That download is no longer in the list.")
+	}
+	e.dl.mu.Lock()
+	if !j.Resumable {
+		e.dl.mu.Unlock()
+		return errors.New("That download can't be resumed.")
+	}
+	j.Resumable, j.State, j.Error = false, fetch.Checking, ""
+	e.dl.mu.Unlock()
+	fmt.Fprintf(e.log, "download %d (%s): resuming\n", j.ID, j.host)
+	e.save(j)
+	e.launch(j, e.runFile)
+	return nil
+}
+
+// restore loads the saved list. A download that was running when the engine
+// last stopped is paused if its file can be resumed, else marked failed and
+// its leftovers deleted.
+func (e *engine) restore(jr *journal.Journal) error {
+	e.jr = jr
+	if err := jr.Trim(keepDownloads); err != nil {
+		return err
+	}
+	recs, err := jr.Load()
+	if err != nil {
+		return err
+	}
+	// Work folders of streams cut off by a crash.
+	if old, _ := filepath.Glob(filepath.Join(e.dir, workPrefix+"*")); len(old) > 0 {
+		for _, p := range old {
+			os.RemoveAll(p)
+		}
+	}
+	for _, r := range recs {
+		j := &job{Status: r.Status, req: r.Request, part: r.Part, size: r.Size, validator: r.Validator, have: r.Have, cancel: func(error) {}}
+		if r.Request != nil {
+			j.host = hostOf(r.Request.URL)
+		}
+		wasRunning := false
+		switch j.State {
+		case fetch.Checking, fetch.Downloading, fetch.Waiting, fetch.Joining:
+			wasRunning = true
+		}
+		if wasRunning || j.Resumable {
+			ok := j.req != nil && j.part != "" && j.validator != "" && fileExists(j.part)
+			switch {
+			case ok:
+				j.State, j.Resumable = fetch.Paused, true
+				j.Done, j.Streams = covered(j.have), 0
+				if wasRunning {
+					j.Error = "Paused: the app stopped during this download."
+				}
+				e.save(j)
+			default:
+				if j.part != "" {
+					os.Remove(j.part)
+				}
+				j.part, j.have, j.Resumable, j.State, j.Streams = "", nil, false, fetch.Failed, 0
+				j.Error = "The app stopped during this download; send it from the browser again."
+				if !wasRunning {
+					j.Error = "The unfinished file is gone; send it from the browser again."
+				}
+				e.end(j)
+			}
+		}
+		e.dl.jobs = append(e.dl.jobs, j)
+		e.dl.next = max(e.dl.next, j.ID)
+	}
+	return nil
+}
+
+func fileExists(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && fi.Mode().IsRegular()
+}
+
+func covered(rs []outfile.Range) int64 {
+	var n int64
+	for _, r := range rs {
+		n += r.End - r.Start
+	}
+	return n
 }
 
 // running counts the downloads that haven't stopped yet.
@@ -201,19 +515,21 @@ func (e *engine) running() int {
 	n := 0
 	for _, s := range e.dl.list() {
 		switch s.State {
-		case fetch.Checking, fetch.Downloading, fetch.Joining:
+		case fetch.Checking, fetch.Downloading, fetch.Joining, fetch.Waiting:
 			n++
 		}
 	}
 	return n
 }
 
-// stopAll cancels every running download and waits (up to wait) for them to
-// stop, so their unfinished files are cleaned up before the engine exits.
+// stopAll stops every running download and waits (up to wait) for them to
+// save their progress, or clean up the files of those that can't resume.
 func (e *engine) stopAll(wait time.Duration) {
 	e.dl.mu.Lock()
 	for _, j := range e.dl.jobs {
-		j.cancel()
+		if j.cancel != nil {
+			j.cancel(errShutdown)
+		}
 	}
 	e.dl.mu.Unlock()
 	for end := time.Now().Add(wait); e.running() > 0 && time.Now().Before(end); {

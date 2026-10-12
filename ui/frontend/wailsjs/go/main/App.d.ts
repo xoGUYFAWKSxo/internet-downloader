@@ -17,4 +17,6 @@ export function Downloads():Promise<Array<fetch.Status>>;
 
 export function ReceivedMedia():Promise<Array<media.Summary>>;
 
+export function ResumeDownload(arg1:number):Promise<void>;
+
 export function ShowInFolder(arg1:string):Promise<void>;

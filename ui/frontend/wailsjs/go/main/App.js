@@ -26,6 +26,10 @@ export function ReceivedMedia() {
   return window['go']['main']['App']['ReceivedMedia']();
 }
 
+export function ResumeDownload(arg1) {
+  return window['go']['main']['App']['ResumeDownload'](arg1);
+}
+
 export function ShowInFolder(arg1) {
   return window['go']['main']['App']['ShowInFolder'](arg1);
 }

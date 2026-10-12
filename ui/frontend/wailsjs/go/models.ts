@@ -14,6 +14,7 @@ export namespace fetch {
 	    parts?: number;
 	    partsDone?: number;
 	    started: string;
+	    resumable?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Status(source);
@@ -34,6 +35,7 @@ export namespace fetch {
 	        this.parts = source["parts"];
 	        this.partsDone = source["partsDone"];
 	        this.started = source["started"];
+	        this.resumable = source["resumable"];
 	    }
 	}
 

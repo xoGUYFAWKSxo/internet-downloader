@@ -5,6 +5,8 @@ const (
 	Checking    = "checking"
 	Downloading = "downloading"
 	Joining     = "joining" // FFmpeg is joining the tracks of a stream
+	Waiting     = "waiting" // the connection dropped; trying again soon
+	Paused      = "paused"  // stopped with the app; can be resumed
 	Done        = "done"
 	Failed      = "failed"
 	Cancelled   = "cancelled"
@@ -27,4 +29,6 @@ type Status struct {
 	Parts     int    `json:"parts,omitempty"`
 	PartsDone int    `json:"partsDone,omitempty"`
 	Started   string `json:"started"`
+	// Resumable means the unfinished file is kept and Resume picks it up.
+	Resumable bool `json:"resumable,omitempty"`
 }

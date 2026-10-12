@@ -4,7 +4,8 @@
 //
 // The file starts as one piece per stream. A stream that finishes takes over
 // the back half of the largest piece still being fetched, so a slow stream
-// doesn't hold up the end. Phase 5 retries and resumes.
+// doesn't hold up the end. Bytes already in the file (from an earlier,
+// interrupted run) aren't fetched again.
 package fetch
 
 import (
@@ -14,12 +15,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/outfile"
@@ -53,6 +56,26 @@ type Options struct {
 // ErrChanged means the server's file is no longer the one the probe saw.
 var ErrChanged = errors.New("the file on the server changed during the download")
 
+// ErrDropped means a connection ended before its bytes were all in.
+var ErrDropped = errors.New("the connection ended early")
+
+// Dropped tells whether err is a lost or failed connection, or a server
+// error that may pass, so trying again later can work.
+func Dropped(err error) bool {
+	var ne net.Error
+	var se *probe.StatusError
+	switch {
+	case errors.Is(err, context.Canceled), errors.Is(err, ErrChanged):
+		return false
+	case errors.Is(err, ErrDropped), errors.Is(err, io.ErrUnexpectedEOF), errors.As(err, &ne):
+		return true
+	case errors.As(err, &se):
+		return se.Code == http.StatusBadGateway || se.Code == http.StatusServiceUnavailable || se.Code == http.StatusGatewayTimeout
+	}
+	var qe *quic.IdleTimeoutError
+	return errors.As(err, &qe)
+}
+
 // Download fetches res's file into out. out must have res.Size bytes (or -1).
 func Download(ctx context.Context, r probe.Request, res *probe.Result, out *outfile.File, o Options) error {
 	if out.Size() != res.Size {
@@ -75,7 +98,10 @@ func Download(ctx context.Context, r probe.Request, res *probe.Result, out *outf
 	if res.Plan.Mode == probe.Single || res.Size <= 0 {
 		return d.whole(ctx)
 	}
-	d.queue = split(res.Size, res.Plan.Streams)
+	d.queue = pieces(out.Missing(), res.Plan.Streams)
+	if len(d.queue) == 0 {
+		return nil
+	}
 	// The first failure stops the other streams.
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
@@ -288,7 +314,7 @@ func (d *download) fetchPiece(ctx context.Context, p *piece) error {
 	}
 	start, end := d.left(p)
 	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end-1))
-	if v := ifRange(d.res); v != "" {
+	if v := Validator(d.res); v != "" {
 		req.Header.Set("If-Range", v)
 	}
 	resp, err := d.client.Do(req)
@@ -326,7 +352,7 @@ func (d *download) fetchPiece(ctx context.Context, p *piece) error {
 			return nil
 		}
 		if rerr == io.EOF || rerr == io.ErrUnexpectedEOF {
-			return fmt.Errorf("the connection ended after %d of %d bytes", pos-start, end-start)
+			return fmt.Errorf("%w after %d of %d bytes", ErrDropped, pos-start, end-start)
 		}
 		if rerr != nil {
 			return rerr
@@ -384,18 +410,52 @@ func (d *download) copy(body io.Reader, off, n int64) error {
 		}
 	}
 	if n >= 0 && got != n {
-		return fmt.Errorf("the connection ended after %d of %d bytes", got, n)
+		return fmt.Errorf("%w after %d of %d bytes", ErrDropped, got, n)
 	}
 	return nil
 }
 
-// ifRange is the validator for If-Range: a strong ETag, else Last-Modified.
-// A weak ETag (W/"...") isn't allowed there.
-func ifRange(res *probe.Result) string {
+// Validator tells whether the server's file is still the same one: a strong
+// ETag, else Last-Modified, or "" when there is neither. It is sent as
+// If-Range; a weak ETag (W/"...") isn't allowed there.
+func Validator(res *probe.Result) string {
 	if res.ETag != "" && !strings.HasPrefix(res.ETag, "W/") {
 		return res.ETag
 	}
 	return res.LastModified
+}
+
+// pieces cuts the missing spans into n pieces to start with: one span is
+// split evenly, several are halved, largest first, until there are n.
+func pieces(missing []outfile.Range, n int) []*piece {
+	if len(missing) == 1 {
+		ps := split(missing[0].End-missing[0].Start, n)
+		for _, p := range ps {
+			p.pos += missing[0].Start
+			p.end += missing[0].Start
+		}
+		return ps
+	}
+	ps := make([]*piece, len(missing))
+	for i, m := range missing {
+		ps[i] = &piece{pos: m.Start, end: m.End}
+	}
+	for len(ps) < n {
+		big := 0
+		for i, p := range ps {
+			if p.end-p.pos > ps[big].end-ps[big].pos {
+				big = i
+			}
+		}
+		b := ps[big]
+		if b.end-b.pos < 2 {
+			break
+		}
+		mid := b.pos + (b.end-b.pos)/2
+		ps = append(ps, &piece{pos: mid, end: b.end})
+		b.end = mid
+	}
+	return ps
 }
 
 // split cuts size bytes into n near-equal pieces, none smaller than 1 byte.

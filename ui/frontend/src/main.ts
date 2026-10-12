@@ -1,5 +1,5 @@
 import './style.css';
-import {CancelDownload, CheckEngine, CheckServer, Download, Downloads, ReceivedMedia, ShowInFolder} from '../wailsjs/go/main/App';
+import {CancelDownload, CheckEngine, CheckServer, Download, Downloads, ReceivedMedia, ResumeDownload, ShowInFolder} from '../wailsjs/go/main/App';
 
 const statusEl = document.getElementById('engine-status')!;
 const button = document.getElementById('recheck') as HTMLButtonElement;
@@ -109,6 +109,7 @@ async function startDownload(id: number, btn: HTMLButtonElement) {
 
 const STATE: Record<string, string> = {
     checking: 'Checking the server…', downloading: 'Downloading', joining: 'Joining video and audio…', done: 'Done', failed: 'Failed', cancelled: 'Cancelled',
+    waiting: 'Waiting to try again', paused: 'Paused',
 };
 // The last sample per download, to work out the speed from two real readings.
 const samples = new Map<number, {done: number, at: number, speed: number}>();
@@ -126,6 +127,18 @@ function speedOf(id: number, done: number): number | null {
     return speed;
 }
 
+// actionButton runs action once, then refreshes the list, which shows the outcome.
+function actionButton(text: string, action: () => Promise<void>): HTMLButtonElement {
+    const b = document.createElement('button');
+    b.textContent = text;
+    b.addEventListener('click', async () => {
+        b.disabled = true;
+        try { await action(); } catch { /* the list shows the outcome */ }
+        await refreshDownloads();
+    });
+    return b;
+}
+
 async function refreshDownloads() {
     let list;
     try {
@@ -136,7 +149,7 @@ async function refreshDownloads() {
     dlEmptyEl.hidden = list.length > 0;
     dlEl.replaceChildren(...list.map((d) => {
         const li = document.createElement('li');
-        const active = d.state === 'checking' || d.state === 'downloading' || d.state === 'joining';
+        const active = d.state === 'checking' || d.state === 'downloading' || d.state === 'joining' || d.state === 'waiting';
         const cls = d.state === 'done' ? 'ok' : d.state === 'failed' ? 'bad' : '';
         const title = el('div', 'title', '');
         title.append(el('span', 'kind ' + cls, STATE[d.state] ?? d.state), el('span', '', d.name));
@@ -160,17 +173,10 @@ async function refreshDownloads() {
                 li.append(bar);
             }
         }
-        if (d.error) li.append(el('div', 'probe bad', d.error));
-        if (active) {
-            const cancel = document.createElement('button');
-            cancel.textContent = 'Cancel';
-            cancel.addEventListener('click', async () => {
-                cancel.disabled = true;
-                try { await CancelDownload(d.id); } catch { /* the list shows the outcome */ }
-                await refreshDownloads();
-            });
-            li.append(cancel);
-        }
+        if (d.error) li.append(el('div', d.state === 'failed' ? 'probe bad' : 'probe', d.error));
+        if (d.resumable) li.append(actionButton('Resume', () => ResumeDownload(d.id)));
+        // On a paused download, Cancel throws away the unfinished file.
+        if (active || d.resumable) li.append(actionButton(d.resumable ? 'Discard' : 'Cancel', () => CancelDownload(d.id)));
         if (d.state === 'done' && d.path) {
             const show = document.createElement('button');
             show.textContent = 'Show in folder';

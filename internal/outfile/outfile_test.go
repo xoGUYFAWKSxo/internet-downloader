@@ -168,3 +168,36 @@ func TestReplace(t *testing.T) {
 		t.Fatal("source left behind")
 	}
 }
+
+func TestReopen(t *testing.T) {
+	dir := t.TempDir()
+	o, err := Create(dir, "film.mkv", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o.WriteAt(bytes.Repeat([]byte("a"), 40), 0)
+	o.WriteAt(bytes.Repeat([]byte("c"), 20), 80)
+	have := o.Have()
+	if err := o.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(o.Path(), 99, have); err == nil {
+		t.Fatal("opened with the wrong size")
+	}
+	r, err := Open(o.Path(), 100, have)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Name() != "film.mkv" || r.Written() != 60 || !reflect.DeepEqual(r.Missing(), []Range{{40, 80}}) {
+		t.Fatalf("name %q, written %d, missing %v", r.Name(), r.Written(), r.Missing())
+	}
+	r.WriteAt(bytes.Repeat([]byte("b"), 40), 40)
+	path, err := r.Finish()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(path)
+	if string(b) != strings.Repeat("a", 40)+strings.Repeat("b", 40)+strings.Repeat("c", 20) {
+		t.Fatalf("file = %q", b)
+	}
+}

@@ -106,6 +106,11 @@ func (a *App) CancelDownload(id uint64) error {
 	return decode(a.call(ipc.Message{Type: "downloads.cancel", Payload: idPayload(id)}))(nil)
 }
 
+// ResumeDownload carries on with a paused or failed download.
+func (a *App) ResumeDownload(id uint64) error {
+	return decode(a.call(ipc.Message{Type: "downloads.resume", Payload: idPayload(id)}))(nil)
+}
+
 // ShowInFolder opens Explorer with the file selected.
 func (a *App) ShowInFolder(path string) error {
 	if !filepath.IsAbs(path) {

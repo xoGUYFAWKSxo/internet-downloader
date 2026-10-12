@@ -16,11 +16,14 @@ import (
 	"os"
 	"os/signal"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/fetch"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/ipc"
+	"github.com/xoGUYFAWKSxo/internet-downloader/internal/journal"
+	"github.com/xoGUYFAWKSxo/internet-downloader/internal/launch"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/media"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/outfile"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/probe"
@@ -56,9 +59,25 @@ func main() {
 	}()
 	fmt.Fprintln(os.Stderr, "engine", version.Version, "listening on", name)
 	e := newEngine(os.Stderr)
+	if jr, err := journal.Open(journalPath()); err != nil {
+		// Downloads still work; the list just isn't kept.
+		fmt.Fprintln(os.Stderr, "engine: couldn't open the saved download list:", err)
+	} else {
+		defer jr.Close()
+		if err := e.restore(jr); err != nil {
+			fmt.Fprintln(os.Stderr, "engine: couldn't load the saved download list:", err)
+		}
+	}
 	served := make(chan error, 1)
 	go func() { served <- ipc.Serve(l, e.handle) }()
 	runTray(e, l, served)
+}
+
+// journalPath is the saved download list, beside the engine's log.
+func journalPath() string {
+	dir := filepath.Dir(launch.LogPath())
+	os.MkdirAll(dir, 0o755)
+	return filepath.Join(dir, "downloads.db")
 }
 
 func probeOnce(u string) int {
