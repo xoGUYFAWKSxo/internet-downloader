@@ -1,0 +1,11 @@
+/bin/
+/dist/
+ui/build/bin/
+ui/frontend/node_modules/
+ui/frontend/dist/
+*.exe
+*.test
+*.out
+*.db
+*.db-wal
+*.db-shm
