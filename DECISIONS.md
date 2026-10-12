@@ -38,3 +38,4 @@ These are settled. Don't reopen them unless the user asks. Newest first.
 - **2026-10-12: No DRM circumvention.** DRM-protected streams are detected and refused with a message.
 - **2026-10-12: Plain language, measured numbers only.** No invented speeds, counters or marketing claims in the UI, README or docs.
 - **2026-10-12: Commit with the GitHub noreply address** (`206061236+xoGUYFAWKSxo@users.noreply.github.com`), same as the TuneUp Suite.
+- **2026-10-12: The popup describes each item in plain words** (user request: it didn't say what kind of video or audio an item was). The extension reads each playlist once, and for MP4 files only the track list (the first 64 KB, then just the part holding the track list, at most 8 MB). These requests carry the browser's cookies like the player's do. The separate video, audio and file parts are listed under the playlist they belong to, and whole videos with sound come first.

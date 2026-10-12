@@ -63,6 +63,8 @@ test("lists playlists and large media, skips segments and errors", async () => {
   assert.equal(badges[7], "2");
   assert.equal(list[1].headers.cookie, undefined, "cookies must not be kept in the list");
   assert.ok(!JSON.stringify(session).includes("sid=s1"), "cookies must not reach session storage");
+  assert.equal(list[1].info.type, "media", "the playlist is read so the popup can describe it");
+  assert.equal(list[0].info.type, "none", "nothing readable: described from its name");
 });
 
 test("send builds the full context", async () => {

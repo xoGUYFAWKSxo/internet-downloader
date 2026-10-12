@@ -2,6 +2,7 @@
 // asks, sends one to the app with everything needed to fetch it the way the
 // browser did. All native messaging goes through here.
 import { classify, headerMap, totalSize, replayHeaders, worthListing, toCookie, dedupeCookies } from "./detect.js";
+import { parseHLS, parseDASH, sniffMP4, findMoov, fileInfo, SNIFF_BYTES, MAX_MOOV } from "./describe.js";
 
 const api = globalThis.browser ?? globalThis.chrome;
 const HOST = "com.xoguyfawksxo.internet_downloader";
@@ -88,10 +89,91 @@ async function record(tabId, item) {
   let items = tabs.get(tabId);
   if (!items) tabs.set(tabId, (items = new Map()));
   const known = items.get(item.url);
-  if (known) item.size ??= known.size;
+  if (known) {
+    item.size ??= known.size;
+    item.info ??= known.info;
+  }
   items.set(item.url, item);
   if (items.size > MAX_PER_TAB) items.delete(items.keys().next().value);
   save(tabId);
+  if (!item.info && !reading.has(item.url)) {
+    reading.add(item.url);
+    const info = (await inspect(item).catch(() => null)) ?? { type: "none" };
+    reading.delete(item.url);
+    const now = tabs.get(tabId)?.get(item.url);
+    if (now) {
+      now.info = info;
+      save(tabId);
+    }
+  }
+}
+
+// Items being read for their description, so a playlist the player reloads
+// every few seconds is only fetched once.
+const reading = new Set();
+
+// inspect reads a playlist, or the start of an MP4 file, so the popup can say
+// what it is. It returns null when it can't tell.
+async function inspect(item) {
+  const signal = AbortSignal.timeout(15000);
+  if (item.kind === "hls" || item.kind === "dash") {
+    const r = await fetch(item.url, { credentials: "include", signal });
+    if (!r.ok) return null;
+    const text = await r.text();
+    if (text.length > MAX_MANIFEST) return null;
+    return item.kind === "hls" ? parseHLS(text, item.url) : parseDASH(text, item.url);
+  }
+  if (!/\.(mp4|m4v|m4a|mov)$/i.test(new URL(item.url).pathname) && !/mp4|quicktime/.test(item.contentType)) return null;
+  // Find the track list: usually near the start, sometimes after the media
+  // data. Each step asks only for the bytes it needs.
+  let offset = 0;
+  for (let step = 0; step < 4; step++) {
+    const chunk = await readRange(item.url, offset, SNIFF_BYTES, signal);
+    if (!chunk) return null;
+    const found = findMoov(chunk, offset);
+    if (found?.next !== undefined) {
+      offset = found.next;
+      continue;
+    }
+    if (!found?.moov) return null;
+    const [start, end] = found.moov;
+    if (end - start > MAX_MOOV) return null;
+    const moov = end <= offset + chunk.length ? chunk.subarray(start - offset, end - offset) : await readRange(item.url, start, end - start, signal);
+    const tracks = moov && sniffMP4(moov);
+    return tracks && fileInfo(tracks);
+  }
+  return null;
+}
+
+// readRange fetches n bytes from offset, or null when the server can't send
+// just that part.
+async function readRange(url, offset, n, signal) {
+  const r = await fetch(url, { credentials: "include", headers: { range: `bytes=${offset}-${offset + n - 1}` }, signal });
+  if (!r.body || !(r.status === 206 || (r.status === 200 && offset === 0))) {
+    r.body?.cancel().catch(() => {});
+    return null;
+  }
+  return readStart(r.body, n);
+}
+
+// readStart reads up to n bytes, then stops: a server that ignores the range
+// would otherwise send the whole file.
+async function readStart(body, n) {
+  const reader = body.getReader();
+  const buf = new Uint8Array(n);
+  let got = 0;
+  try {
+    while (got < n) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const take = Math.min(value.length, n - got);
+      buf.set(value.subarray(0, take), got);
+      got += take;
+    }
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+  return buf.subarray(0, got);
 }
 
 // cookiesFor asks every cookie store the browser has for this URL: the
