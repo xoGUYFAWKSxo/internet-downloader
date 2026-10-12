@@ -55,10 +55,10 @@ func main() {
 		l.Close()
 	}()
 	fmt.Fprintln(os.Stderr, "engine", version.Version, "listening on", name)
-	if err := ipc.Serve(l, newEngine(os.Stderr).handle); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+	e := newEngine(os.Stderr)
+	served := make(chan error, 1)
+	go func() { served <- ipc.Serve(l, e.handle) }()
+	runTray(e, l, served)
 }
 
 func probeOnce(u string) int {

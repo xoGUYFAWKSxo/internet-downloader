@@ -28,7 +28,12 @@ func main() {
 			Assets: assets,
 		},
 		OnStartup: app.startup,
-		Bind:      []interface{}{app},
+		// Opening the app again (from the tray or a shortcut) shows this window.
+		SingleInstanceLock: &options.SingleInstanceLock{
+			UniqueId:               "com.xoguyfawksxo.internet_downloader.ui",
+			OnSecondInstanceLaunch: func(options.SecondInstanceData) { app.show() },
+		},
+		Bind: []interface{}{app},
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ui:", err)

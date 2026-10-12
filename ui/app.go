@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,6 +23,13 @@ type App struct {
 }
 
 func (a *App) startup(ctx context.Context) { a.ctx = ctx }
+
+func (a *App) show() {
+	runtime.WindowUnminimise(a.ctx)
+	runtime.Show(a.ctx)
+	runtime.WindowSetAlwaysOnTop(a.ctx, true)
+	runtime.WindowSetAlwaysOnTop(a.ctx, false)
+}
 
 // EngineStatus is what the window shows about the background engine.
 type EngineStatus struct {
