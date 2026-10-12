@@ -62,13 +62,7 @@ async function refreshMedia() {
         const dl = document.createElement('button');
         dl.textContent = 'Download';
         li.append(' ', dl);
-        if (m.kind === 'video' || m.kind === 'audio') {
-            dl.addEventListener('click', () => startDownload(m.id, dl));
-        } else {
-            // Say why on the item itself, not only in a note under the list.
-            dl.disabled = true;
-            li.append(el('div', 'probe', `${LABEL[m.kind] ?? m.kind} streams can't be downloaded yet; that comes in the next version. Plain video and audio files can.`));
-        }
+        dl.addEventListener('click', () => startDownload(m.id, dl));
         if (result) li.append(el('div', 'probe ' + result.cls, result.text));
         return li;
     }));
@@ -114,7 +108,7 @@ async function startDownload(id: number, btn: HTMLButtonElement) {
 }
 
 const STATE: Record<string, string> = {
-    checking: 'Checking the server…', downloading: 'Downloading', done: 'Done', failed: 'Failed', cancelled: 'Cancelled',
+    checking: 'Checking the server…', downloading: 'Downloading', joining: 'Joining video and audio…', done: 'Done', failed: 'Failed', cancelled: 'Cancelled',
 };
 // The last sample per download, to work out the speed from two real readings.
 const samples = new Map<number, {done: number, at: number, speed: number}>();
@@ -142,24 +136,27 @@ async function refreshDownloads() {
     dlEmptyEl.hidden = list.length > 0;
     dlEl.replaceChildren(...list.map((d) => {
         const li = document.createElement('li');
-        const active = d.state === 'checking' || d.state === 'downloading';
+        const active = d.state === 'checking' || d.state === 'downloading' || d.state === 'joining';
         const cls = d.state === 'done' ? 'ok' : d.state === 'failed' ? 'bad' : '';
         const title = el('div', 'title', '');
         title.append(el('span', 'kind ' + cls, STATE[d.state] ?? d.state), el('span', '', d.name));
         li.append(title);
         if (d.state !== 'checking') {
             const parts = [d.size >= 0 ? `${size(d.done)} of ${size(d.size)}` : size(d.done)];
-            if (d.size > 0) parts.push(`${Math.floor(d.done * 100 / d.size)}%`);
+            if (d.parts && d.state !== 'done') parts.push(`segment ${d.partsDone ?? 0} of ${d.parts}`);
+            else if (d.size > 0) parts.push(`${Math.floor(d.done * 100 / d.size)}%`);
             if (d.state === 'downloading') {
                 const s = speedOf(d.id, d.done);
                 if (s !== null) parts.push(`${size(Math.round(s))}/s`);
             }
             if (d.protocol) parts.push(`${d.protocol}, ${d.streams} ${d.streams === 1 ? 'request' : 'parallel requests'}`);
             li.append(el('div', 'meta', parts.join(' · ')));
-            if (d.size > 0) {
+            // A stream's size isn't known until the end, so its bar counts segments.
+            const [value, max] = d.parts && d.state !== 'done' ? [d.partsDone ?? 0, d.parts] : [d.done, d.size];
+            if (max > 0) {
                 const bar = document.createElement('progress');
-                bar.max = d.size;
-                bar.value = d.done;
+                bar.max = max;
+                bar.value = value;
                 li.append(bar);
             }
         }

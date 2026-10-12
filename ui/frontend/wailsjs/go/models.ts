@@ -11,6 +11,8 @@ export namespace fetch {
 	    protocol?: string;
 	    mode?: string;
 	    streams?: number;
+	    parts?: number;
+	    partsDone?: number;
 	    started: string;
 	
 	    static createFrom(source: any = {}) {
@@ -29,6 +31,8 @@ export namespace fetch {
 	        this.protocol = source["protocol"];
 	        this.mode = source["mode"];
 	        this.streams = source["streams"];
+	        this.parts = source["parts"];
+	        this.partsDone = source["partsDone"];
 	        this.started = source["started"];
 	    }
 	}

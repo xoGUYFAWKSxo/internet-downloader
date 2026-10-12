@@ -13,13 +13,14 @@ Desktop download manager for Windows: a background download engine, a desktop UI
 - Default max physical TCP connections per download (HTTP/1.1 fallback): 4.
 - One pre-allocated output file per download. Never write multiple part-files.
 
-## Layout (planned; built so far: `cmd/engine`, `cmd/nmhost`, `internal/ipc`, `internal/media`, `internal/nativemsg`, `internal/probe`, `internal/fetch`, `internal/outfile`, `internal/testserver`, `extension/`, `installer/register-native-host.ps1`, `ui/`)
+## Layout (planned; built so far: `cmd/engine`, `cmd/nmhost`, `internal/ipc`, `internal/media`, `internal/nativemsg`, `internal/probe`, `internal/fetch`, `internal/outfile`, `internal/stream`, `internal/testserver`, `extension/`, `installer/register-native-host.ps1`, `ui/`)
 Windows 10/11 x64, runs as the normal user, never elevated. The root Go module holds the engine, relay and `internal/`. `ui/` is a nested module (Wails needs its own `go.mod`) that uses the root module through a `replace ../` line:
 - `cmd/engine/`: `engine.exe`. Starts at login, owns the tray icon, does all downloads, and is the only process that writes files or the database.
 - `cmd/nmhost/`: `nmhost.exe`. Native Messaging relay: browser JSON in, then out over the pipe to the engine. No download logic.
 - `ui/`: `ui.exe`. A Wails v2 app (WebView2 + TypeScript frontend) that talks to the engine over the pipe.
 - `internal/`: engine packages (probe, transfer, storage, media, journal, ipc).
 - `extension/`: MV3 extension for Chrome, Firefox and Edge. Firefox MV3 needs `background.scripts` (not `service_worker`) and `browser_specific_settings.gecko.id`.
+- FFmpeg (for joining stream tracks) is looked up next to `engine.exe`, then on PATH; tests use a stand-in.
 - `installer/`: installer, Native Messaging registration (`installer/register-native-host.ps1`: HKCU, Chrome, Edge and Firefox), bundled `ffmpeg.exe`.
 - IPC: JSON over the named pipe `\\.\pipe\InternetDownloader-<user SID>`. Only the current user can open it.
 Update this section when the real layout exists.
@@ -32,7 +33,7 @@ go build -o bin/ ./cmd/...
 go test -count=1 ./...
 node --test extension/build.test.mjs extension/detect.test.mjs extension/background.test.mjs
 bin/engine.exe -probe URL       # check one server: HTTP version, ranges, size, download plan
-bin/engine.exe -get URL -dir D  # download one file (default folder: Downloads)
+bin/engine.exe -get URL -dir D  # download one file, or an HLS/DASH stream (.m3u8/.mpd), default folder: Downloads
 go test ./internal/outfile -run - -bench . -benchtime 3x   # disk write methods compared
 node extension/build.mjs        # unpacked builds in extension/dist/{chrome,firefox}
 cd ui; wails build -clean; go test ./...   # window -> ui/build/bin/ui.exe

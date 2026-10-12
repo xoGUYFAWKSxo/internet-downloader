@@ -12,14 +12,17 @@ import (
 	"golang.org/x/sys/windows"
 
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/fetch"
+	"github.com/xoGUYFAWKSxo/internet-downloader/internal/media"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/outfile"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/probe"
 )
 
 type job struct {
 	fetch.Status
-	out    *outfile.File
-	cancel context.CancelFunc
+	host string // for the log; never the full address, which can hold tokens
+	// progress, while set, gives the bytes and segments written so far.
+	progress func() (int64, int)
+	cancel   context.CancelFunc
 }
 
 type downloads struct {
@@ -35,8 +38,8 @@ func (d *downloads) list() []fetch.Status {
 	for i := len(d.jobs) - 1; i >= 0; i-- { // newest first
 		j := d.jobs[i]
 		v := j.Status
-		if j.out != nil && v.State == fetch.Downloading {
-			v.Done = j.out.Written()
+		if j.progress != nil && v.State == fetch.Downloading {
+			v.Done, v.PartsDone = j.progress()
 		}
 		out = append(out, v)
 	}
@@ -69,32 +72,31 @@ func downloadDir() string {
 	return filepath.Join(home, "Downloads")
 }
 
-// startDownload downloads a received item in the background. Only plain
-// files are supported so far: HLS and DASH need their fragments fetched and
-// joined, which is Phase 4.
+// startDownload downloads a received item in the background.
 func (e *engine) startDownload(id uint64) (uint64, error) {
 	it, ok := e.inbox.Get(id)
 	if !ok {
 		return 0, errors.New("That item is no longer in the list.")
 	}
-	if it.Context.Kind == "hls" || it.Context.Kind == "dash" {
-		return 0, errors.New("Downloading HLS and DASH streams isn't built yet; only plain video and audio files can be downloaded so far.")
-	}
 	c := it.Context
+	if c.Kind == media.KindHLS || c.Kind == media.KindDASH {
+		return e.downloadStream(c), nil
+	}
 	return e.download(probe.Request{URL: c.URL, Referer: c.Referer, Headers: c.Headers, Cookies: c.Cookies}), nil
 }
 
-// download starts r and returns its id at once.
-func (e *engine) download(r probe.Request) uint64 {
+// start adds a job for address u and runs it in the background; it returns
+// the job's id at once.
+func (e *engine) start(u string, run func(context.Context, *job)) uint64 {
 	ctx, cancel := context.WithCancel(context.Background())
 	e.dl.mu.Lock()
 	e.dl.next++
-	j := &job{Status: fetch.Status{ID: e.dl.next, Name: hostOf(r.URL), Size: -1, State: fetch.Checking, Started: e.now().Format(time.RFC3339)}, cancel: cancel}
+	j := &job{Status: fetch.Status{ID: e.dl.next, Name: hostOf(u), Size: -1, State: fetch.Checking, Started: e.now().Format(time.RFC3339)}, host: hostOf(u), cancel: cancel}
 	e.dl.jobs = append(e.dl.jobs, j)
 	e.dl.mu.Unlock()
 	go func() {
 		defer cancel()
-		e.run(ctx, j, r)
+		run(ctx, j)
 		if e.finished != nil {
 			e.finished(j.ID)
 		}
@@ -102,66 +104,87 @@ func (e *engine) download(r probe.Request) uint64 {
 	return j.ID
 }
 
-func (e *engine) run(ctx context.Context, j *job, r probe.Request) {
-	host := hostOf(r.URL)
-	fail := func(err error) {
-		state := fetch.Failed
-		if errors.Is(err, context.Canceled) {
-			state, err = fetch.Cancelled, errors.New("cancelled")
-		}
-		fmt.Fprintf(e.log, "download %d (%s): %s: %v\n", j.ID, host, state, err)
-		e.dl.update(j, func(j *job) {
-			j.State, j.Error = state, sentence(err)
-			if j.out != nil {
-				j.Done = j.out.Written()
-			}
+// download starts a plain file download.
+func (e *engine) download(r probe.Request) uint64 {
+	return e.start(r.URL, func(ctx context.Context, j *job) {
+		path, size, err := e.getFile(ctx, j, r, e.dir, func(res *probe.Result, out *outfile.File) {
+			e.dl.update(j, func(j *job) {
+				j.Name, j.Size, j.State = out.Name(), res.Size, fetch.Downloading
+				j.Protocol, j.Mode, j.Streams = res.Protocol, res.Plan.Mode, res.Plan.Streams
+				j.progress = func() (int64, int) { return out.Written(), 0 }
+			})
 		})
-	}
+		if err != nil {
+			e.fail(j, err)
+			return
+		}
+		e.done(j, path, size)
+	})
+}
 
+// fail records why j stopped.
+func (e *engine) fail(j *job, err error) {
+	state := fetch.Failed
+	if errors.Is(err, context.Canceled) {
+		state, err = fetch.Cancelled, errors.New("cancelled")
+	}
+	fmt.Fprintf(e.log, "download %d (%s): %s: %v\n", j.ID, j.host, state, err)
+	e.dl.update(j, func(j *job) {
+		j.State, j.Error = state, sentence(err)
+		if j.progress != nil {
+			j.Done, j.PartsDone = j.progress()
+		}
+		j.progress = nil
+	})
+}
+
+// done records where j's file went.
+func (e *engine) done(j *job, path string, size int64) {
+	fmt.Fprintf(e.log, "download %d (%s): done, %d bytes\n", j.ID, j.host, size)
+	e.dl.update(j, func(j *job) {
+		j.State, j.Path, j.Name, j.Done = fetch.Done, path, filepath.Base(path), size
+		j.Size, j.PartsDone, j.progress = size, j.Parts, nil
+	})
+}
+
+// getFile probes r and downloads it into dir under the server's file name.
+// started is called once the file exists. A failed download deletes its
+// .part file: nothing can resume it until the Phase 5 range log exists.
+func (e *engine) getFile(ctx context.Context, j *job, r probe.Request, dir string, started func(*probe.Result, *outfile.File)) (string, int64, error) {
+	host := hostOf(r.URL)
 	pctx, pcancel := context.WithTimeout(ctx, 30*time.Second)
 	res, err := probe.Probe(pctx, r, e.probe)
 	pcancel()
 	if err != nil {
-		fail(err)
-		return
+		return "", 0, err
 	}
 	name := res.FileName
 	if name == "" {
 		name = host
 	}
-	out, err := outfile.Create(e.dir, name, res.Size)
+	out, err := outfile.Create(dir, name, res.Size)
 	if err != nil {
-		fail(err)
-		return
+		return "", 0, err
 	}
-	e.dl.update(j, func(j *job) {
-		j.out, j.Name, j.Size, j.State = out, out.Name(), res.Size, fetch.Downloading
-		j.Protocol, j.Mode, j.Streams = res.Protocol, res.Plan.Mode, res.Plan.Streams
-	})
+	started(res, out)
 	fmt.Fprintf(e.log, "download %d (%s): %s, %s, %d streams, %d bytes\n", j.ID, host, res.Protocol, res.Plan.Mode, res.Plan.Streams, res.Size)
-
-	if err := fetch.Download(ctx, r, res, out, fetch.Options{RootCAs: e.probe.RootCAs, OnLimit: func(n int) {
-		fmt.Fprintf(e.log, "download %d (%s): the server is busy; now %d parallel requests\n", j.ID, host, n)
-		e.dl.update(j, func(j *job) { j.Streams = n })
-	}}); err != nil {
-		// Without the Phase 5 range log a partial file can't be resumed.
-		out.Abort()
-		fail(err)
-		return
+	err = fetch.Download(ctx, r, res, out, fetch.Options{RootCAs: e.probe.RootCAs, OnLimit: e.onLimit(j)})
+	var path string
+	if err == nil {
+		path, err = out.Finish()
 	}
-	path, err := out.Finish()
 	if err != nil {
 		out.Abort()
-		fail(err)
-		return
+		return "", 0, err
 	}
-	fmt.Fprintf(e.log, "download %d (%s): done, %d bytes\n", j.ID, host, out.Written())
-	e.dl.update(j, func(j *job) {
-		j.State, j.Path, j.Name, j.Done = fetch.Done, path, filepath.Base(path), out.Written()
-		if j.Size < 0 {
-			j.Size = j.Done
-		}
-	})
+	return path, out.Written(), nil
+}
+
+func (e *engine) onLimit(j *job) func(int) {
+	return func(n int) {
+		fmt.Fprintf(e.log, "download %d (%s): the server is busy; now %d parallel requests\n", j.ID, j.host, n)
+		e.dl.update(j, func(j *job) { j.Streams = n })
+	}
 }
 
 func (e *engine) cancelDownload(id uint64) error {
