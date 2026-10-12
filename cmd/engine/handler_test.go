@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -190,5 +191,17 @@ func TestCancelDownload(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(e.dir); len(entries) != 0 {
 		t.Fatalf("left %v", entries)
+	}
+}
+
+func TestSentence(t *testing.T) {
+	for in, want := range map[string]string{
+		"no route":                "No route.",
+		"the machine refused it.": "The machine refused it.",
+		"HTTP 404":                "HTTP 404.",
+	} {
+		if got := sentence(errors.New(in)); got != want {
+			t.Errorf("%q: got %q", in, got)
+		}
 	}
 }

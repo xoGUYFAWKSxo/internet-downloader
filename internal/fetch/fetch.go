@@ -2,9 +2,9 @@
 // probe's plan: one request, several HTTP/1.1 connections with one range
 // each, or several ranges multiplexed on one HTTP/2 or HTTP/3 connection.
 //
-// The split is fixed for now: the file is cut into as many equal parts as the
-// plan has streams. Phase 4 measures the line and adjusts; Phase 5 retries
-// and resumes.
+// The file starts as one piece per stream. A stream that finishes takes over
+// the back half of the largest piece still being fetched, so a slow stream
+// doesn't hold up the end. Phase 5 retries and resumes.
 package fetch
 
 import (
@@ -32,6 +32,12 @@ const (
 	// maxRetryWait, ends the download with the server's answer.
 	maxRefusals  = 10
 	maxRetryWait = time.Minute
+	// A piece is split only if both halves are at least this big; smaller
+	// requests cost more in round trips than they save.
+	minPiece = 1 << 20
+	// A limit lowered by a busy server goes up by one after this long
+	// without a refusal, up to the plan's streams.
+	growAfter = 30 * time.Second
 )
 
 type Options struct {
@@ -69,13 +75,15 @@ func Download(ctx context.Context, r probe.Request, res *probe.Result, out *outf
 	if res.Plan.Mode == probe.Single || res.Size <= 0 {
 		return d.whole(ctx)
 	}
-	// The first failure stops the other parts.
+	d.queue = split(res.Size, res.Plan.Streams)
+	// The first failure stops the other streams.
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
+	go d.regrow(ctx, res.Plan.Streams)
 	var wg sync.WaitGroup
-	for _, p := range split(res.Size, res.Plan.Streams) {
+	for range len(d.queue) {
 		wg.Go(func() {
-			if err := d.part(ctx, p); err != nil {
+			if err := d.worker(ctx); err != nil {
 				cancel(err)
 			}
 		})
@@ -83,6 +91,9 @@ func Download(ctx context.Context, r probe.Request, res *probe.Result, out *outf
 	wg.Wait()
 	if err := context.Cause(ctx); err != nil {
 		return err
+	}
+	if m := out.Missing(); len(m) > 0 {
+		return fmt.Errorf("bytes %d-%d were never fetched", m[0].Start, m[0].End-1)
 	}
 	return nil
 }
@@ -96,7 +107,15 @@ type download struct {
 	req       probe.Request
 	res       *probe.Result
 	out       *outfile.File
+
+	mu     sync.Mutex
+	queue  []*piece // not started, or handed back after a refusal
+	active []*piece // being fetched
 }
+
+// piece is a range a stream is fetching. pos only moves forward, by the
+// stream that owns it; end can drop when another stream takes the back half.
+type piece struct{ pos, end int64 }
 
 // newClient gives a client limited to the plan's connections and the
 // protocol the probe chose.
@@ -133,23 +152,31 @@ func (d *download) request(ctx context.Context) (*http.Request, error) {
 	return req, nil
 }
 
-// part fetches [p.Start, p.End) with a range request. If-Range makes a server
-// whose file changed send the whole new file (200) instead of a piece of it,
-// which is then refused.
-// part fetches p when the gate lets it. A refusal for being busy (429, 503)
-// waits as long as the server asks and tries again with fewer parts in
-// flight; any other error ends the download.
-func (d *download) part(ctx context.Context, p outfile.Range) error {
-	for refusals := 0; ; refusals++ {
+// worker fetches pieces until none are left. A refusal for being busy (429,
+// 503) hands the piece back, lowers the limit and waits as long as the server
+// asks; any other error ends the download.
+func (d *download) worker(ctx context.Context) error {
+	for refusals := 0; ; {
 		if err := d.gate.acquire(ctx); err != nil {
 			return err
 		}
-		err := d.fetchPart(ctx, p)
+		p := d.next()
+		if p == nil {
+			d.gate.release()
+			return nil
+		}
+		err := d.fetchPiece(ctx, p)
 		var se *probe.StatusError
 		if !errors.As(err, &se) || (se.Code != http.StatusTooManyRequests && se.Code != http.StatusServiceUnavailable) {
 			d.gate.release()
-			return err
+			if err != nil {
+				return err
+			}
+			d.finished(p)
+			refusals = 0
+			continue
 		}
+		d.handBack(p)
 		if n := d.gate.refused(); d.onLimit != nil {
 			d.onLimit(n)
 		}
@@ -157,7 +184,7 @@ func (d *download) part(ctx context.Context, p outfile.Range) error {
 		if wait == 0 {
 			wait = d.retryWait
 		}
-		if refusals == maxRefusals || wait > maxRetryWait {
+		if refusals++; refusals > maxRefusals || wait > maxRetryWait {
 			return err
 		}
 		select {
@@ -168,12 +195,99 @@ func (d *download) part(ctx context.Context, p outfile.Range) error {
 	}
 }
 
-func (d *download) fetchPart(ctx context.Context, p outfile.Range) error {
+// next gives a stream the next piece to fetch: one waiting in the queue, else
+// the back half of the largest piece in flight, else nil.
+func (d *download) next() *piece {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	var p *piece
+	if len(d.queue) > 0 {
+		p, d.queue = d.queue[0], d.queue[1:]
+	} else {
+		var big *piece
+		for _, a := range d.active {
+			if big == nil || a.end-a.pos > big.end-big.pos {
+				big = a
+			}
+		}
+		if big == nil || big.end-big.pos < 2*minPiece {
+			return nil
+		}
+		mid := big.pos + (big.end-big.pos)/2
+		p = &piece{pos: mid, end: big.end}
+		big.end = mid
+	}
+	d.active = append(d.active, p)
+	return p
+}
+
+func (d *download) finished(p *piece) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.drop(p)
+}
+
+func (d *download) handBack(p *piece) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.drop(p)
+	if p.pos < p.end {
+		d.queue = append(d.queue, p)
+	}
+}
+
+func (d *download) drop(p *piece) {
+	for i, a := range d.active {
+		if a == p {
+			d.active = append(d.active[:i], d.active[i+1:]...)
+			return
+		}
+	}
+}
+
+// claim takes up to n bytes from the front of p and returns where they go.
+// Fewer than n means the rest of the piece now belongs to another stream.
+func (d *download) claim(p *piece, n int) (off int64, k int) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	k = int(min(int64(n), p.end-p.pos))
+	off = p.pos
+	p.pos += int64(k)
+	return off, k
+}
+
+func (d *download) left(p *piece) (pos, end int64) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return p.pos, p.end
+}
+
+// regrow raises a limit that a busy server lowered, one stream at a time.
+func (d *download) regrow(ctx context.Context, max int) {
+	t := time.NewTicker(growAfter / 6)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if n, ok := d.gate.grow(max, growAfter); ok && d.onLimit != nil {
+				d.onLimit(n)
+			}
+		}
+	}
+}
+
+// fetchPiece fetches p with a range request. If-Range makes a server whose
+// file changed send the whole new file (200) instead of a piece of it, which
+// is then refused.
+func (d *download) fetchPiece(ctx context.Context, p *piece) error {
 	req, err := d.request(ctx)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", p.Start, p.End-1))
+	start, end := d.left(p)
+	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end-1))
 	if v := ifRange(d.res); v != "" {
 		req.Header.Set("If-Range", v)
 	}
@@ -189,14 +303,35 @@ func (d *download) fetchPart(ctx context.Context, p outfile.Range) error {
 	default:
 		return probe.NewStatusError(resp)
 	}
-	start, total, ok := probe.ContentRange(resp.Header.Get("Content-Range"))
-	if !ok || start != p.Start || total != d.res.Size {
-		return fmt.Errorf("the server sent the wrong part of the file (%q for bytes %d-%d)", resp.Header.Get("Content-Range"), p.Start, p.End-1)
+	got, total, ok := probe.ContentRange(resp.Header.Get("Content-Range"))
+	if !ok || got != start || total != d.res.Size {
+		return fmt.Errorf("the server sent the wrong part of the file (%q for bytes %d-%d)", resp.Header.Get("Content-Range"), start, end-1)
 	}
 	if et := resp.Header.Get("ETag"); d.res.ETag != "" && et != "" && et != d.res.ETag {
 		return ErrChanged
 	}
-	return d.copy(resp.Body, p.Start, p.End-p.Start)
+	// Read until the piece is done. It ends early if another stream took its
+	// back half; closing the body then stops the transfer.
+	buf := make([]byte, bufSize)
+	for {
+		n, rerr := io.ReadFull(resp.Body, buf)
+		if n > 0 {
+			off, k := d.claim(p, n)
+			if _, err := d.out.WriteAt(buf[:k], off); err != nil {
+				return err
+			}
+		}
+		pos, end := d.left(p)
+		if pos == end {
+			return nil
+		}
+		if rerr == io.EOF || rerr == io.ErrUnexpectedEOF {
+			return fmt.Errorf("the connection ended after %d of %d bytes", pos-start, end-start)
+		}
+		if rerr != nil {
+			return rerr
+		}
+	}
 }
 
 // whole fetches the file in one request, start to end.
@@ -263,12 +398,12 @@ func ifRange(res *probe.Result) string {
 	return res.LastModified
 }
 
-// split cuts size bytes into n near-equal parts, none smaller than 1 byte.
-func split(size int64, n int) []outfile.Range {
+// split cuts size bytes into n near-equal pieces, none smaller than 1 byte.
+func split(size int64, n int) []*piece {
 	n = int(min(int64(max(n, 1)), size))
-	parts := make([]outfile.Range, n)
+	parts := make([]*piece, n)
 	for i := range n {
-		parts[i] = outfile.Range{Start: size * int64(i) / int64(n), End: size * int64(i+1) / int64(n)}
+		parts[i] = &piece{pos: size * int64(i) / int64(n), end: size * int64(i+1) / int64(n)}
 	}
 	return parts
 }
