@@ -6,7 +6,7 @@ _Last updated: 2026-10-12, branch phase0-scaffold._
 
 ## Repository
 - Local folder: `C:\Users\Allen\OneDrive\Documents\projects\internet-downloader`.
-- Git repo with `main` (initial docs + GPL-3.0 license) and branch `phase0-scaffold`. **No GitHub remote yet**: creating the public repo `xoGUYFAWKSxo/internet-downloader` is waiting on the user's permission.
+- GitHub: https://github.com/xoGUYFAWKSxo/internet-downloader (public, GPL-3.0, created 2026-10-12, remote `origin`). Auto-merge off, branches deleted on merge.
 
 ## Architecture
 ```
