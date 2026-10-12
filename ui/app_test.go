@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/fetch"
@@ -58,5 +59,13 @@ func TestDecode(t *testing.T) {
 	}
 	if err := (&App{}).ShowInFolder("relative.txt"); err == nil {
 		t.Fatal("relative path accepted")
+	}
+}
+
+func TestProgressArg(t *testing.T) {
+	for args, want := range map[string]uint64{"": 0, "--progress=12": 12, "-x --progress=7": 7, "--progress=x": 0, "--progress": 0} {
+		if got := progressArg(strings.Fields(args)); got != want {
+			t.Errorf("%q: got %d, want %d", args, got, want)
+		}
 	}
 }

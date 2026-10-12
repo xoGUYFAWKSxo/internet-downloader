@@ -32,3 +32,20 @@ type Status struct {
 	// Resumable means the unfinished file is kept and Resume picks it up.
 	Resumable bool `json:"resumable,omitempty"`
 }
+
+// Detail is what a download's progress window shows.
+type Detail struct {
+	Status Status `json:"status"`
+	Host   string `json:"host,omitempty"` // the server; never the full address, which can hold tokens
+	// Resume is "yes" or "no" once the server has been asked whether the
+	// download can carry on after a stop, else "".
+	Resume string `json:"resume,omitempty"`
+	Have   []Span `json:"have"`  // the parts of the file written so far
+	Conns  []Conn `json:"conns"` // the streams, while it runs
+}
+
+// Span is the bytes from Start up to End.
+type Span struct {
+	Start int64 `json:"start"`
+	End   int64 `json:"end"`
+}

@@ -23,7 +23,17 @@ import (
 // App is bound to the frontend; its exported methods become TypeScript calls.
 type App struct {
 	ctx context.Context
+	// progress is the download whose progress window this is, or 0 for the
+	// main window.
+	progress uint64
 }
+
+// The progress window's size, without and with its details.
+const (
+	progressWidth   = 520
+	progressHeight  = 330
+	progressDetails = 590
+)
 
 func (a *App) startup(ctx context.Context) { a.ctx = ctx }
 
@@ -135,6 +145,38 @@ func (a *App) AddURL(u string) (uint64, error) {
 	}
 	err := decode(a.call(ipc.Message{Type: "downloads.add", Payload: p}))(&out)
 	return out.ID, err
+}
+
+// ProgressID is the download this window shows, or 0 in the main window.
+func (a *App) ProgressID() uint64 { return a.progress }
+
+// DownloadDetail gives what the progress window shows of a download.
+func (a *App) DownloadDetail(id uint64) (fetch.Detail, error) {
+	var out fetch.Detail
+	return out, decode(a.call(ipc.Message{Type: "downloads.detail", Payload: idPayload(id)}))(&out)
+}
+
+// ShowProgress opens a download's progress window, or brings it forward if
+// it is open already.
+func (a *App) ShowProgress(id uint64) error {
+	self, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	if err := exec.Command(self, fmt.Sprintf("--progress=%d", id)).Start(); err != nil {
+		return fmt.Errorf("couldn't open the progress window: %w", err)
+	}
+	return nil
+}
+
+// ShowDetails makes the progress window tall enough for its details, or
+// short again.
+func (a *App) ShowDetails(show bool) {
+	h := progressHeight
+	if show {
+		h = progressDetails
+	}
+	runtime.WindowSetSize(a.ctx, progressWidth, h)
 }
 
 // OpenFile opens a finished download with its usual program.

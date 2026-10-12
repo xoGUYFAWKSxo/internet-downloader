@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -467,5 +468,68 @@ func TestDropped(t *testing.T) {
 		if got := Dropped(c.err); got != c.want {
 			t.Errorf("%v: got %v", c.err, got)
 		}
+	}
+}
+
+// Watch shows each stream's piece and what it has written while the
+// download runs, and nothing once it has ended.
+func TestWatchShowsConnections(t *testing.T) {
+	body := testserver.Content(size)
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var a, b int
+		fmt.Sscanf(r.Header.Get("Range"), "bytes=%d-%d", &a, &b)
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", a, b, size))
+		w.Header().Set("Content-Length", strconv.Itoa(b-a+1))
+		w.WriteHeader(http.StatusPartialContent)
+		w.Write(body[a : a+bufSize])
+		w.(http.Flusher).Flush()
+		select {
+		case <-release:
+		case <-r.Context().Done():
+			return
+		}
+		w.Write(body[a+bufSize : b+1])
+	}))
+	defer srv.Close()
+	res := &probe.Result{URL: srv.URL, Protocol: probe.HTTP1, Size: size, Ranges: true,
+		Plan: probe.Plan{Mode: probe.Ranges, Streams: 3, Connections: 3}}
+	out, _ := outfile.Create(t.TempDir(), "f", size)
+	defer out.Abort()
+	w := &Watch{}
+	errc := make(chan error, 1)
+	go func() { errc <- Download(context.Background(), probe.Request{URL: srv.URL}, res, out, Options{Watch: w}) }()
+
+	var cs []Conn
+	for end := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		cs = w.Connections()
+		if len(cs) == 3 && out.Written() == 3*bufSize {
+			break
+		}
+		if time.Now().After(end) {
+			t.Fatalf("connections: %+v, %d written", cs, out.Written())
+		}
+	}
+	// Streams are listed as they started, which isn't file order.
+	sort.Slice(cs, func(i, j int) bool { return cs[i].Start < cs[j].Start })
+	var got int64
+	for i, c := range cs {
+		if c.State != ConnReceiving || c.Pos != c.Start+bufSize || c.Got != bufSize || c.End <= c.Pos {
+			t.Errorf("stream %d: %+v", i, c)
+		}
+		if i > 0 && c.Start != cs[i-1].End {
+			t.Errorf("stream %d doesn't start where %d ends: %+v", i, i-1, cs)
+		}
+		got += c.Got
+	}
+	if cs[0].Start != 0 || cs[2].End != size || got != out.Written() {
+		t.Errorf("pieces don't cover the file: %+v", cs)
+	}
+	close(release)
+	if err := <-errc; err != nil {
+		t.Fatal(err)
+	}
+	if cs := w.Connections(); cs != nil {
+		t.Fatalf("after the end: %+v", cs)
 	}
 }

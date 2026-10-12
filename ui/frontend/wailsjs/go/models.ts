@@ -1,5 +1,39 @@
 export namespace fetch {
 	
+	export class Conn {
+	    state: string;
+	    start: number;
+	    pos: number;
+	    end: number;
+	    got: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Conn(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.state = source["state"];
+	        this.start = source["start"];
+	        this.pos = source["pos"];
+	        this.end = source["end"];
+	        this.got = source["got"];
+	    }
+	}
+	export class Span {
+	    start: number;
+	    end: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Span(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.start = source["start"];
+	        this.end = source["end"];
+	    }
+	}
 	export class Status {
 	    id: number;
 	    name: string;
@@ -38,6 +72,45 @@ export namespace fetch {
 	        this.resumable = source["resumable"];
 	    }
 	}
+	export class Detail {
+	    status: Status;
+	    host?: string;
+	    resume?: string;
+	    have: Span[];
+	    conns: Conn[];
+	
+	    static createFrom(source: any = {}) {
+	        return new Detail(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.status = this.convertValues(source["status"], Status);
+	        this.host = source["host"];
+	        this.resume = source["resume"];
+	        this.have = this.convertValues(source["have"], Span);
+	        this.conns = this.convertValues(source["conns"], Conn);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 
 }
 

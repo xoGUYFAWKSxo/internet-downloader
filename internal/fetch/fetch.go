@@ -51,6 +51,8 @@ type Options struct {
 	// OnLimit, if set, hears when a busy server makes the download use
 	// fewer parallel requests.
 	OnLimit func(streams int)
+	// Watch, if set, shows the download's connections while it runs.
+	Watch *Watch
 }
 
 // ErrChanged means the server's file is no longer the one the probe saw.
@@ -94,6 +96,10 @@ func Download(ctx context.Context, r probe.Request, res *probe.Result, out *outf
 		target.Host = res.H3Addr
 	}
 	d := &download{gate: newGate(res.Plan.Streams), retryWait: o.RetryWait, onLimit: o.OnLimit, client: client, url: target.String(), req: r, res: res, out: out}
+	if o.Watch != nil {
+		o.Watch.set(d)
+		defer o.Watch.set(nil)
+	}
 
 	if res.Plan.Mode == probe.Single || res.Size <= 0 {
 		return d.whole(ctx)
@@ -108,8 +114,9 @@ func Download(ctx context.Context, r probe.Request, res *probe.Result, out *outf
 	go d.regrow(ctx, res.Plan.Streams)
 	var wg sync.WaitGroup
 	for range len(d.queue) {
+		s := d.addSlot()
 		wg.Go(func() {
-			if err := d.worker(ctx); err != nil {
+			if err := d.worker(ctx, s); err != nil {
 				cancel(err)
 			}
 		})
@@ -137,11 +144,86 @@ type download struct {
 	mu     sync.Mutex
 	queue  []*piece // not started, or handed back after a refusal
 	active []*piece // being fetched
+	slots  []*slot  // one per stream, for Watch
 }
 
 // piece is a range a stream is fetching. pos only moves forward, by the
 // stream that owns it; end can drop when another stream takes the back half.
 type piece struct{ pos, end int64 }
+
+// slot is what one stream is doing. Its fields are guarded by download.mu.
+type slot struct {
+	state string
+	p     *piece
+	start int64 // where the stream's current request began
+	got   int64 // bytes the stream has written, over all its requests
+}
+
+// What a stream is doing.
+const (
+	ConnWaiting   = "waiting"   // for a free slot, after a busy server lowered the limit
+	ConnStarting  = "starting"  // request sent, no answer yet
+	ConnReceiving = "receiving" // bytes coming in
+	ConnBusy      = "busy"      // the server refused it as busy; trying again soon
+	ConnDone      = "done"      // nothing left for it to fetch
+)
+
+// Conn is one stream of a download, as Watch shows it.
+type Conn struct {
+	State string `json:"state"`
+	Start int64  `json:"start"` // where its current request began
+	Pos   int64  `json:"pos"`   // the next byte it will write
+	End   int64  `json:"end"`   // where its piece ends; -1 when unknown
+	Got   int64  `json:"got"`   // bytes it has written in all
+}
+
+// Watch lets the caller look at a download's streams while it runs.
+type Watch struct {
+	mu sync.Mutex
+	d  *download
+}
+
+func (w *Watch) set(d *download) {
+	w.mu.Lock()
+	w.d = d
+	w.mu.Unlock()
+}
+
+// Connections lists the streams of the running download, in the order they
+// started; nil when none is running.
+func (w *Watch) Connections() []Conn {
+	w.mu.Lock()
+	d := w.d
+	w.mu.Unlock()
+	if d == nil {
+		return nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	out := make([]Conn, len(d.slots))
+	for i, s := range d.slots {
+		c := Conn{State: s.state, Start: s.start, Pos: -1, End: -1, Got: s.got}
+		if s.p != nil && s.state != ConnDone {
+			c.Pos, c.End = s.p.pos, s.p.end
+		}
+		out[i] = c
+	}
+	return out
+}
+
+func (d *download) addSlot() *slot {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	s := &slot{state: ConnWaiting}
+	d.slots = append(d.slots, s)
+	return s
+}
+
+func (d *download) setState(s *slot, state string) {
+	d.mu.Lock()
+	s.state = state
+	d.mu.Unlock()
+}
 
 // newClient gives a client limited to the plan's connections and the
 // protocol the probe chose.
@@ -181,17 +263,19 @@ func (d *download) request(ctx context.Context) (*http.Request, error) {
 // worker fetches pieces until none are left. A refusal for being busy (429,
 // 503) hands the piece back, lowers the limit and waits as long as the server
 // asks; any other error ends the download.
-func (d *download) worker(ctx context.Context) error {
+func (d *download) worker(ctx context.Context, s *slot) error {
 	for refusals := 0; ; {
+		d.setState(s, ConnWaiting)
 		if err := d.gate.acquire(ctx); err != nil {
 			return err
 		}
-		p := d.next()
+		p := d.next(s)
 		if p == nil {
 			d.gate.release()
+			d.setState(s, ConnDone)
 			return nil
 		}
-		err := d.fetchPiece(ctx, p)
+		err := d.fetchPiece(ctx, s)
 		var se *probe.StatusError
 		if !errors.As(err, &se) || (se.Code != http.StatusTooManyRequests && se.Code != http.StatusServiceUnavailable) {
 			d.gate.release()
@@ -213,6 +297,7 @@ func (d *download) worker(ctx context.Context) error {
 		if refusals++; refusals > maxRefusals || wait > maxRetryWait {
 			return err
 		}
+		d.setState(s, ConnBusy)
 		select {
 		case <-time.After(wait):
 		case <-ctx.Done():
@@ -222,8 +307,9 @@ func (d *download) worker(ctx context.Context) error {
 }
 
 // next gives a stream the next piece to fetch: one waiting in the queue, else
-// the back half of the largest piece in flight, else nil.
-func (d *download) next() *piece {
+// the back half of the largest piece in flight, else nil. It becomes s's
+// piece.
+func (d *download) next(s *slot) *piece {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	var p *piece
@@ -244,6 +330,7 @@ func (d *download) next() *piece {
 		big.end = mid
 	}
 	d.active = append(d.active, p)
+	s.p, s.start, s.state = p, p.pos, ConnStarting
 	return p
 }
 
@@ -271,14 +358,17 @@ func (d *download) drop(p *piece) {
 	}
 }
 
-// claim takes up to n bytes from the front of p and returns where they go.
-// Fewer than n means the rest of the piece now belongs to another stream.
-func (d *download) claim(p *piece, n int) (off int64, k int) {
+// claim takes up to n bytes from the front of s's piece and returns where
+// they go. Fewer than n means the rest of the piece now belongs to another
+// stream.
+func (d *download) claim(s *slot, n int) (off int64, k int) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	p := s.p
 	k = int(min(int64(n), p.end-p.pos))
 	off = p.pos
 	p.pos += int64(k)
+	s.got += int64(k)
 	return off, k
 }
 
@@ -307,7 +397,8 @@ func (d *download) regrow(ctx context.Context, max int) {
 // fetchPiece fetches p with a range request. If-Range makes a server whose
 // file changed send the whole new file (200) instead of a piece of it, which
 // is then refused.
-func (d *download) fetchPiece(ctx context.Context, p *piece) error {
+func (d *download) fetchPiece(ctx context.Context, s *slot) error {
+	p := s.p
 	req, err := d.request(ctx)
 	if err != nil {
 		return err
@@ -336,13 +427,14 @@ func (d *download) fetchPiece(ctx context.Context, p *piece) error {
 	if et := resp.Header.Get("ETag"); d.res.ETag != "" && et != "" && et != d.res.ETag {
 		return ErrChanged
 	}
+	d.setState(s, ConnReceiving)
 	// Read until the piece is done. It ends early if another stream took its
 	// back half; closing the body then stops the transfer.
 	buf := make([]byte, bufSize)
 	for {
 		n, rerr := io.ReadFull(resp.Body, buf)
 		if n > 0 {
-			off, k := d.claim(p, n)
+			off, k := d.claim(s, n)
 			if _, err := d.out.WriteAt(buf[:k], off); err != nil {
 				return err
 			}
@@ -365,6 +457,10 @@ func (d *download) whole(ctx context.Context) error {
 	if d.res.Size == 0 {
 		return nil
 	}
+	s := d.addSlot()
+	d.mu.Lock()
+	s.p, s.state = &piece{end: d.res.Size}, ConnStarting
+	d.mu.Unlock()
 	req, err := d.request(ctx)
 	if err != nil {
 		return err
@@ -383,12 +479,18 @@ func (d *download) whole(ctx context.Context) error {
 	if d.res.Size >= 0 && resp.ContentLength >= 0 && resp.ContentLength != d.res.Size {
 		return ErrChanged
 	}
-	return d.copy(resp.Body, 0, d.res.Size)
+	d.setState(s, ConnReceiving)
+	err = d.copy(resp.Body, s, d.res.Size)
+	if err == nil {
+		d.setState(s, ConnDone)
+	}
+	return err
 }
 
-// copy writes body into the file from off. n is the number of bytes
-// expected, or -1 to read to the end.
-func (d *download) copy(body io.Reader, off, n int64) error {
+// copy writes body into the file from the start of s's piece. n is the
+// number of bytes expected, or -1 to read to the end.
+func (d *download) copy(body io.Reader, s *slot, n int64) error {
+	off := s.p.pos
 	if n >= 0 {
 		body = io.LimitReader(body, n)
 	}
@@ -401,6 +503,9 @@ func (d *download) copy(body io.Reader, off, n int64) error {
 				return werr
 			}
 			got += int64(k)
+			d.mu.Lock()
+			s.p.pos, s.got = off+got, s.got+int64(k)
+			d.mu.Unlock()
 		}
 		if err == io.EOF || err == io.ErrUnexpectedEOF {
 			break

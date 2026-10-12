@@ -15,11 +15,15 @@ export function CheckServer(arg1:number):Promise<probe.Result>;
 
 export function Download(arg1:number):Promise<number>;
 
+export function DownloadDetail(arg1:number):Promise<fetch.Detail>;
+
 export function Downloads():Promise<Array<fetch.Status>>;
 
 export function OpenFile(arg1:string):Promise<void>;
 
 export function PauseDownload(arg1:number):Promise<void>;
+
+export function ProgressID():Promise<number>;
 
 export function ReceivedMedia():Promise<Array<media.Summary>>;
 
@@ -27,4 +31,8 @@ export function RemoveDownloads(arg1:Array<number>,arg2:boolean):Promise<void>;
 
 export function ResumeDownload(arg1:number):Promise<void>;
 
+export function ShowDetails(arg1:boolean):Promise<void>;
+
 export function ShowInFolder(arg1:string):Promise<void>;
+
+export function ShowProgress(arg1:number):Promise<void>;

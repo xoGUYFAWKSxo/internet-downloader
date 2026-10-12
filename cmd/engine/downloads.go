@@ -37,6 +37,12 @@ type job struct {
 	// progress, while set, gives the bytes and segments written so far.
 	progress func() (int64, int)
 	cancel   context.CancelCauseFunc
+	// While a file downloads: its file and streams, for the progress window.
+	out   *outfile.File
+	watch *fetch.Watch
+	// resume is "yes" or "no" once the server has said whether the file
+	// can be resumed.
+	resume string
 
 	// To resume a file: its request (nil for streams, which can't resume),
 	// the unfinished file, the server's size and validator it came from,
@@ -93,6 +99,45 @@ func downloadDir() string {
 	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, "Downloads")
+}
+
+// detail gives what the progress window shows of a download.
+func (e *engine) detail(id uint64) (fetch.Detail, error) {
+	j := e.dl.find(id)
+	if j == nil {
+		return fetch.Detail{}, errors.New("That download is no longer in the list.")
+	}
+	e.dl.mu.Lock()
+	d := fetch.Detail{Status: j.Status, Host: j.host, Resume: j.resume, Have: []fetch.Span{}}
+	out, watch, have := j.out, j.watch, j.have
+	if j.progress != nil && d.Status.State == fetch.Downloading {
+		d.Status.Done, d.Status.PartsDone = j.progress()
+	}
+	switch {
+	case j.req == nil:
+		d.Resume = "no" // streams start over
+	case d.Resume == "" && j.Resumable:
+		d.Resume = "yes"
+	}
+	e.dl.mu.Unlock()
+	switch {
+	case d.Status.State == fetch.Done:
+		if d.Status.Size > 0 {
+			have = []outfile.Range{{Start: 0, End: d.Status.Size}}
+		}
+	case out != nil:
+		have = out.Have()
+	}
+	for _, r := range have {
+		d.Have = append(d.Have, fetch.Span{Start: r.Start, End: r.End})
+	}
+	if watch != nil {
+		d.Conns = watch.Connections()
+	}
+	if d.Conns == nil {
+		d.Conns = []fetch.Conn{}
+	}
+	return d, nil
 }
 
 // startDownload downloads a received item in the background.
@@ -211,17 +256,23 @@ func (e *engine) getResumable(ctx context.Context, j *job) (string, int64, error
 			}
 		}
 	}
+	watch := &fetch.Watch{}
 	e.dl.update(j, func(j *job) {
 		j.part, j.size, j.validator, j.have = out.Path(), res.Size, v, nil
 		j.Name, j.Size, j.State, j.Error, j.Resumable = out.Name(), res.Size, fetch.Downloading, "", false
 		j.Protocol, j.Mode, j.Streams = res.Protocol, res.Plan.Mode, res.Plan.Streams
 		j.progress = func() (int64, int) { return out.Written(), 0 }
+		j.out, j.watch, j.resume = out, watch, "no"
+		if resumable {
+			j.resume = "yes"
+		}
 	})
+	defer e.dl.update(j, func(j *job) { j.out, j.watch = nil, nil })
 	e.save(j)
 	fmt.Fprintf(e.log, "download %d (%s): %s, %s, %d streams, %d bytes, %d already in\n", j.ID, j.host, res.Protocol, res.Plan.Mode, res.Plan.Streams, res.Size, out.Written())
 
 	stop := e.checkpoints(j, out)
-	err = fetch.Download(ctx, *j.req, res, out, fetch.Options{RootCAs: e.probe.RootCAs, OnLimit: e.onLimit(j)})
+	err = fetch.Download(ctx, *j.req, res, out, fetch.Options{RootCAs: e.probe.RootCAs, OnLimit: e.onLimit(j), Watch: watch})
 	stop()
 	if err == nil {
 		var path string
