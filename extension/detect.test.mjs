@@ -48,7 +48,9 @@ test("worthListing", () => {
   assert.equal(worthListing("hls", 10), true);
   assert.equal(worthListing("video", 1000), false);
   assert.equal(worthListing("video", 10 << 20), true);
-  assert.equal(worthListing("audio", null), true);
+  // Bug: YouTube's UI sounds (no Content-Length) were listed as audio.
+  assert.equal(worthListing("audio", null), false);
+  assert.equal(worthListing("video", null), false);
 });
 
 test("fileName and formatBytes", () => {
