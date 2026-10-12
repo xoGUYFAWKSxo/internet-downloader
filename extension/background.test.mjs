@@ -1,0 +1,87 @@
+// Runs background.js against a fake browser API, so the request-watching and
+// sending flow is tested without a real browser.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+function event() {
+  const fns = [];
+  return { addListener: (fn) => fns.push(fn), fire: (...a) => fns.map((f) => f(...a)) };
+}
+
+const session = {};
+const sent = [];
+const badges = {};
+const cookieQueries = [];
+globalThis.chrome = {
+  storage: { session: {
+    get: async () => ({ ...session }),
+    set: async (o) => Object.assign(session, o),
+    remove: async (k) => delete session[k],
+  } },
+  action: { setBadgeText: async ({ tabId, text }) => { badges[tabId] = text; } },
+  webRequest: {
+    OnSendHeadersOptions: { EXTRA_HEADERS: "extraHeaders" },
+    onSendHeaders: event(), onHeadersReceived: event(), onErrorOccurred: event(), onBeforeRequest: event(),
+  },
+  tabs: { onRemoved: event(), get: async (id) => ({ id, url: "https://site.example/watch", title: "A video" }) },
+  cookies: { getAll: async (q) => {
+    cookieQueries.push(q);
+    if ("partitionKey" in q) throw new Error("unsupported");
+    return [{ name: "sid", value: "s1", domain: "cdn.example", path: "/" }];
+  } },
+  runtime: {
+    onMessage: event(),
+    sendNativeMessage: async (_host, msg) => { sent.push(msg); return { ok: true, payload: { id: 1 } }; },
+  },
+};
+globalThis.fetch = async () => ({ ok: true, status: 200, text: async () => "#EXTM3U\n" });
+
+await import("./src/background.js");
+const wr = chrome.webRequest;
+const tick = () => new Promise((r) => setTimeout(r, 0));
+const ask = (msg) => new Promise((r) => { chrome.runtime.onMessage.fire(msg, {}, r); });
+
+function request(id, url, reqHeaders, resHeaders, tabId = 7, statusCode = 200) {
+  wr.onSendHeaders.fire({ requestId: id, tabId, requestHeaders: reqHeaders });
+  wr.onHeadersReceived.fire({ requestId: id, tabId, url, statusCode, responseHeaders: resHeaders });
+}
+
+test("lists playlists and large media, skips segments and errors", async () => {
+  request("1", "https://cdn.example/master.m3u8?t=1",
+    [{ name: "Referer", value: "https://site.example/watch" }, { name: "Cookie", value: "sid=s1" }],
+    [{ name: "Content-Type", value: "application/vnd.apple.mpegurl" }]);
+  request("2", "https://cdn.example/seg1.ts", [], [{ name: "Content-Type", value: "video/mp2t" }]);
+  request("3", "https://cdn.example/tiny.mp4", [], [{ name: "Content-Length", value: "100" }]);
+  request("4", "https://cdn.example/gone.m3u8", [], [], 7, 404);
+  request("5", "https://cdn.example/film.mp4", [], [{ name: "Content-Range", value: "bytes 0-99/900000000" }]);
+  request("6", "https://cdn.example/other-tab.mp4", [], [], -1);
+  await tick();
+  const list = await ask({ type: "list", tabId: 7 });
+  assert.deepEqual(list.map((i) => i.url), ["https://cdn.example/film.mp4", "https://cdn.example/master.m3u8?t=1"]);
+  assert.equal(list[0].size, 900000000);
+  assert.equal(badges[7], "2");
+  assert.equal(list[1].headers.cookie, undefined, "cookies must not be kept in the list");
+  assert.ok(!JSON.stringify(session).includes("sid=s1"), "cookies must not reach session storage");
+});
+
+test("send builds the full context", async () => {
+  const r = await ask({ type: "send", tabId: 7, url: "https://cdn.example/master.m3u8?t=1" });
+  assert.equal(r.ok, true);
+  const m = sent.at(-1);
+  assert.equal(m.type, "media");
+  assert.equal(m.media.kind, "hls");
+  assert.equal(m.media.referer, "https://site.example/watch");
+  assert.equal(m.media.pageTitle, "A video");
+  assert.equal(m.media.manifest, "#EXTM3U\n");
+  assert.deepEqual(m.media.cookies.map((c) => c.name), ["sid"]);
+  assert.ok(cookieQueries.some((q) => "partitionKey" in q), "tries partitioned cookies first");
+});
+
+test("unknown stream and new page", async () => {
+  const r = await ask({ type: "send", tabId: 7, url: "https://nope.example/x.m3u8" });
+  assert.equal(r.ok, false);
+  wr.onBeforeRequest.fire({ tabId: 7, type: "main_frame" });
+  await tick();
+  assert.deepEqual(await ask({ type: "list", tabId: 7 }), []);
+  assert.equal(badges[7], "");
+});

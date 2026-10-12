@@ -1,5 +1,6 @@
 // Command engine is the background download engine. Phase 0: it owns the
-// IPC pipe and answers ping; downloads come in later phases.
+// IPC pipe, answers ping and keeps the streams the browser sends; downloads
+// come in later phases.
 package main
 
 import (
@@ -29,7 +30,7 @@ func main() {
 		l.Close()
 	}()
 	fmt.Fprintln(os.Stderr, "engine", version.Version, "listening on", name)
-	if err := ipc.Serve(l, handle); err != nil {
+	if err := ipc.Serve(l, newEngine(os.Stderr).handle); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

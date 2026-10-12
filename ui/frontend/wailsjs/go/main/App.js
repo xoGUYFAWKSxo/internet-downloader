@@ -5,3 +5,7 @@
 export function CheckEngine() {
   return window['go']['main']['App']['CheckEngine']();
 }
+
+export function ReceivedMedia() {
+  return window['go']['main']['App']['ReceivedMedia']();
+}

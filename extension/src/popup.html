@@ -4,16 +4,34 @@
 <meta charset="utf-8">
 <title>Internet Downloader</title>
 <style>
-  body { font: 13px system-ui, sans-serif; width: 260px; margin: 12px; }
-  button { width: 100%; padding: 6px; }
-  #status { margin-top: 10px; white-space: pre-wrap; }
+  body { font: 13px system-ui, sans-serif; width: 340px; margin: 12px; }
+  button { padding: 4px 8px; }
+  #check, #grant { width: 100%; padding: 6px; }
+  #status { margin-top: 8px; white-space: pre-wrap; }
+  h2 { font-size: 13px; margin: 14px 0 6px; }
+  ul { list-style: none; padding: 0; margin: 0; }
+  li { border-top: 1px solid #8884; padding: 6px 0; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kind { font-size: 11px; font-weight: 600; padding: 1px 5px; border-radius: 3px; background: #8883; }
+  .meta, .note { color: #666; font-size: 12px; }
+  .msg { font-size: 12px; margin-top: 4px; }
   .ok { color: #11772e; }
   .bad { color: #b3261e; }
+  [hidden] { display: none; }
 </style>
 </head>
 <body>
+<div id="perm" hidden>
+  <p>To spot videos on web pages, the extension needs permission to see the pages you visit. Nothing leaves your computer except what you send to the app.</p>
+  <button id="grant">Allow on all sites</button>
+</div>
+<h2>Found on this page</h2>
+<ul id="list"></ul>
+<p id="empty" class="note">Nothing found yet. Start playing the video, then open this again.</p>
+<h2>App</h2>
 <button id="check">Check connection to the app</button>
 <div id="status"></div>
-<script src="popup.js"></script>
+<script type="module" src="popup.js"></script>
 </body>
 </html>

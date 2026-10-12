@@ -2,7 +2,7 @@
 
 _Last updated: 2026-10-12, main after PR #4._
 
-**Project status: Phase 0 complete (PRs #1-#4).** Go module, IPC, Native Messaging framing, engine and relay skeletons, test servers and CI are built. The extension skeleton (Chrome, Firefox, Edge) with a "Check connection to the app" popup, and the Native Messaging registration script, are done. The Wails window shows whether the engine is running. Next: Phase 1 (stream sniffing in the extension).
+**Project status: Phase 1 built (PR #7), waiting for a real-browser check.** Go module, IPC, Native Messaging framing, engine and relay skeletons, test servers and CI are built. The extension skeleton (Chrome, Firefox, Edge) with a "Check connection to the app" popup, and the Native Messaging registration script, are done. The Wails window shows whether the engine is running. Phase 1: the extension lists streams found on each page and sends one to the app on request; the window shows what was received. Next: Phase 2 (protocol probing).
 
 ## Repository
 - Local folder: `C:\Users\Allen\OneDrive\Documents\projects\internet-downloader`.
@@ -25,7 +25,7 @@ App orchestrator --> Network engine (HTTP/3 -> HTTP/2 -> HTTP/1.1 ranges -> sing
 | Phase | Goal | State |
 |---|---|---|
 | 0 | Scaffold: repo, engine skeleton, CI, test harness with a local test server (HTTP/1.1, HTTP/2, HTTP/3, with and without range support) | Done |
-| 1 | Stream interception: MV3 extension finds `.m3u8` / `.mpd` / media requests with `chrome.webRequest`; sends URL, cookies, headers, Referer and manifest text over Native Messaging | Not started |
+| 1 | Stream interception: MV3 extension finds `.m3u8` / `.mpd` / media requests with `chrome.webRequest`; sends URL, cookies, headers, Referer and manifest text over Native Messaging | Built (PR #7); real-browser check pending |
 | 2 | Protocol probing: one probe connection, pick the path (multiplexed streams / multi-connection ranges / single stream) from the capabilities found | Not started |
 | 3 | Disk I/O: pre-allocate on size known; write each part at its offset into the one file | Not started |
 | 4 | Adaptive concurrency: measure RTT and throughput, adjust buffer sizes and stream count within the limits; parallel HLS/DASH fragments, mux with FFmpeg | Not started |
@@ -49,8 +49,9 @@ None. The user left them to Claude's judgement (2026-10-12), and the answers are
 - Unit tests: Native Messaging framing (limits, truncation, invalid JSON), pipe round-trip, single-instance pipe, SID-based pipe name, all four test servers (protocol, full body, range behaviour, Alt-Svc).
 - Registration script (2026-10-12): it registers the Chrome, Edge and Firefox keys and manifests. `-Browsers` limits it to the browsers you name, and `-Unregister` removes everything. A Firefox-style launch of `nmhost.exe` reached the engine.
 - Extension (2026-10-12): manifest tests for Chrome and Firefox, including that the key gives the fixed ID. An extension-style `{"type":"ping"}` sent through `nmhost.exe` returns ok with the version, and returns a plain-English error when the engine isn't running. **Confirmed by the user in real Chrome and Firefox (2026-10-12):** both popups reported "Connected". Edge isn't tested; the user doesn't use it.
+- Phase 1 (2026-10-12): unit tests for stream detection (playlist/media/segment rules, sizes, which headers are replayed, cookies), for `background.js` run against a fake browser API (lists, skips segments and tiny clips, keeps cookies out of storage, builds the full context, resets on a new page), for engine intake (validation, DRM refusal, no cookies/tokens in the log, the list for the window) and for the window's list call. Not yet tried in a real browser.
 - Window (2026-10-12): `wails build` works. Through `wails dev` in the browser pane, the window showed "The download engine is running. Version 0.0.0-dev." With the engine stopped, "Check again" showed "The download engine isn't running."
 - Manual check (2026-10-12): engine started; a framed message piped into `nmhost.exe` reached the engine and its reply came back; nmhost exits cleanly on EOF; a second engine is refused.
 
 ## Not done yet
-Everything past the Phase 0 items above. Nothing downloads yet.
+Everything past Phase 1. Nothing downloads yet: the engine only keeps the streams it is sent (in memory, lost when it restarts).
