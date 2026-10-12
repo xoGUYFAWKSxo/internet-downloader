@@ -13,7 +13,7 @@ Desktop download manager for Windows: a background download engine, a desktop UI
 - Default max physical TCP connections per download (HTTP/1.1 fallback): 4.
 - One pre-allocated output file per download. Never write multiple part-files.
 
-## Planned layout (not built yet)
+## Layout (planned; built so far: `cmd/engine`, `cmd/nmhost`, `internal/ipc`, `internal/nativemsg`, `internal/testserver`)
 One Go module (Windows 10/11 x64, runs as the normal user, never elevated):
 - `cmd/engine/`: `engine.exe`. Starts at login, owns the tray icon, does all downloads, and is the only process that writes files or the database.
 - `cmd/nmhost/`: `nmhost.exe`. Native Messaging relay: browser JSON in, then out over the pipe to the engine. No download logic.
@@ -25,10 +25,17 @@ One Go module (Windows 10/11 x64, runs as the normal user, never elevated):
 Update this section when the real layout exists.
 
 ## Build and test
-Not set up yet. When it is, list the exact commands here, and keep the build at 0 warnings.
+Go is at `C:\Program Files\Go\bin` (add it to PATH in Git Bash: `export PATH="/c/Program Files/Go/bin:$PATH"`). Wails CLI: `%USERPROFILE%\go\bin\wails.exe`.
+```
+go vet ./...
+go build -o bin/ ./cmd/...
+go test -count=1 ./...
+```
+- `go vet` must be clean. CI runs the `build-and-test` check (`.github/workflows/build.yml`) on every PR.
+- Network tests use `internal/testserver` (local HTTP/1.1 with and without ranges, HTTP/2, HTTP/3). Never hit the real internet in tests.
 
 ## Workflow
-- Branch, then open a PR. Merge rules: see DECISIONS.md once the repo exists.
+- Work in `xoGUYFAWKSxo/internet-downloader` (public, remote `origin`). Branch, then open a PR. Once the `build-and-test` check passes green, merge it yourself with `gh pr merge N --merge`; no need to ask. Never merge a PR whose CI failed or is still running. Wait with `gh run watch <id> --exit-status`.
 - Commit as `xoGUYFAWKSxo <206061236+xoGUYFAWKSxo@users.noreply.github.com>`. Never commit with a personal email address.
 - Commit messages: write them to a file and use `git commit -F`, in UTF-8 without a BOM.
 - Update `STATUS.md` when a PR merges. Add to `DECISIONS.md` when the user makes a choice.
