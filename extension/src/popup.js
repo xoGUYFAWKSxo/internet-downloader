@@ -1,8 +1,7 @@
-import { fileName, formatBytes } from "./detect.js";
+import { describe } from "./describe.js";
 
 const api = globalThis.browser ?? globalThis.chrome;
 const status = document.getElementById("status");
-const LABEL = { hls: "HLS", dash: "DASH", video: "Video", audio: "Audio" };
 const ALL_SITES = { origins: ["<all_urls>"] };
 
 function show(el, ok, text) {
@@ -28,38 +27,55 @@ document.getElementById("grant").addEventListener("click", async () => {
   checkPermission();
 });
 
+function entry(tabId, it, title, detail, best) {
+  const li = document.createElement("li");
+  const row = document.createElement("div");
+  row.className = "row";
+  const name = document.createElement("span");
+  name.className = "name";
+  name.textContent = title;
+  name.title = it.url;
+  const button = document.createElement("button");
+  button.textContent = "Send to app";
+  if (best) button.className = "best";
+  row.append(name, button);
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  meta.textContent = detail;
+  const msg = document.createElement("div");
+  msg.className = "msg";
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    msg.className = "msg";
+    msg.textContent = "Sending…";
+    const r = await api.runtime.sendMessage({ type: "send", tabId, url: it.url });
+    if (r?.ok) show(msg, true, "Sent. Press Download in the app's window.");
+    else show(msg, false, r?.error ?? "No answer from the app.");
+    button.disabled = false;
+  });
+  li.append(row, meta, msg);
+  return li;
+}
+
 function render(tabId, items) {
   const list = document.getElementById("list");
   document.getElementById("empty").hidden = items.length > 0;
-  list.replaceChildren(...items.map((it) => {
-    const li = document.createElement("li");
-    const row = document.createElement("div");
-    row.className = "row";
-    const kind = document.createElement("span");
-    kind.className = "kind";
-    kind.textContent = LABEL[it.kind] ?? it.kind;
-    const name = document.createElement("span");
-    name.className = "name";
-    name.textContent = fileName(it.url);
-    name.title = it.url;
-    const button = document.createElement("button");
-    button.textContent = "Send to app";
-    row.append(kind, name, button);
-    const meta = document.createElement("div");
-    meta.className = "meta";
-    meta.textContent = [new URL(it.url).host, formatBytes(it.size)].filter(Boolean).join(" · ");
-    const msg = document.createElement("div");
-    msg.className = "msg";
-    button.addEventListener("click", async () => {
-      button.disabled = true;
-      msg.className = "msg";
-      msg.textContent = "Sending…";
-      const r = await api.runtime.sendMessage({ type: "send", tabId, url: it.url });
-      if (r?.ok) show(msg, true, "Sent. The app will download it once downloading is built.");
-      else show(msg, false, r?.error ?? "No answer from the app.");
-      button.disabled = false;
-    });
-    li.append(row, meta, msg);
+  list.replaceChildren(...describe(items).map((g) => {
+    const li = entry(tabId, g.item, g.title, g.detail, g.title === "Video with sound");
+    if (g.parts.length) {
+      const note = document.createElement("div");
+      note.className = "note";
+      note.textContent = g.parts.some((p) => p.title === "Sound only") && g.title === "Video with sound"
+        ? "Send this one: the app downloads the picture and the sound and joins them."
+        : "Send this one for the whole thing.";
+      const more = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = `Separate parts (${g.parts.length})`;
+      const ul = document.createElement("ul");
+      ul.append(...g.parts.map((p) => entry(tabId, p.item, p.title, p.detail, false)));
+      more.append(summary, ul);
+      li.append(note, more);
+    }
     return li;
   }));
 }
