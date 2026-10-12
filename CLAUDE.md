@@ -19,8 +19,8 @@ One Go module (Windows 10/11 x64, runs as the normal user, never elevated):
 - `cmd/nmhost/`: `nmhost.exe`. Native Messaging relay: browser JSON in, then out over the pipe to the engine. No download logic.
 - `ui/`: `ui.exe`. A Wails v2 app (WebView2 + TypeScript frontend) that talks to the engine over the pipe.
 - `internal/`: engine packages (probe, transfer, storage, media, journal, ipc).
-- `extension/`: MV3 extension for Chrome and Edge.
-- `installer/`: installer, Native Messaging registration (HKCU, Chrome and Edge), bundled `ffmpeg.exe`.
+- `extension/`: MV3 extension for Chrome, Firefox and Edge. Firefox MV3 needs `background.scripts` (not `service_worker`) and `browser_specific_settings.gecko.id`.
+- `installer/`: installer, Native Messaging registration (`installer/register-native-host.ps1`: HKCU, Chrome, Edge and Firefox), bundled `ffmpeg.exe`.
 - IPC: JSON over the named pipe `\\.\pipe\InternetDownloader-<user SID>`. Only the current user can open it.
 Update this section when the real layout exists.
 

@@ -2,7 +2,7 @@
 
 _Last updated: 2026-10-12, branch phase0-scaffold._
 
-**Project status: Phase 0 in progress.** Go module, IPC, Native Messaging framing, engine and relay skeletons, test servers and CI are built. Still to do in Phase 0: Wails UI skeleton, extension skeleton, Native Messaging registration script.
+**Project status: Phase 0 in progress.** Go module, IPC, Native Messaging framing, engine and relay skeletons, test servers and CI are built. Still to do in Phase 0: Wails UI skeleton, extension skeleton (Chrome, Firefox, Edge). The Native Messaging registration script is done (`installer/register-native-host.ps1`).
 
 ## Repository
 - Local folder: `C:\Users\Allen\OneDrive\Documents\projects\internet-downloader`.
@@ -32,7 +32,7 @@ App orchestrator --> Network engine (HTTP/3 -> HTTP/2 -> HTTP/1.1 ranges -> sing
 | 5 | Recovery: SQLite WAL range log; resume only uncommitted ranges after a drop or crash | Not started |
 
 ## Open questions
-None. The user left them to Claude's judgement (2026-10-12), and the answers are in DECISIONS.md. In short: Go everywhere. Three processes: a tray engine, a Native Messaging relay, and a Wails UI. JSON over a per-user named pipe. Runs as the normal user. `WriteAt` by default. A bundled `ffmpeg.exe`. Chrome and Edge first. Public GPL-3.0 repo.
+None. The user left them to Claude's judgement (2026-10-12), and the answers are in DECISIONS.md. In short: Go everywhere. Three processes: a tray engine, a Native Messaging relay, and a Wails UI. JSON over a per-user named pipe. Runs as the normal user. `WriteAt` by default. A bundled `ffmpeg.exe`. Chrome, Firefox and Edge. Public GPL-3.0 repo.
 
 ## Dev machine (checked 2026-10-12)
 - Go 1.27.0 (winget) and Wails CLI v2.16.0 installed.
@@ -43,10 +43,11 @@ None. The user left them to Claude's judgement (2026-10-12), and the answers are
 - **`SetFileValidData` needs admin rights** (SeManageVolumePrivilege) and exposes whatever old data was on the disk in that space. It also doesn't make a sparse file. For a non-elevated app, use `SetEndOfFile` (optionally with `FSCTL_SET_SPARSE`) or `SetFileInformationByHandle(FileAllocationInfo)`.
 - **mmap isn't zero-copy for network data**: bytes are still copied from the socket buffer into the mapped pages. On Windows, a disk-full or network-drive error while writing to a mapping becomes an access-violation crash rather than a normal error. Plan: benchmark mmap against positioned writes (`WriteAt`) in Phase 3 and pick by measurement; keep the safer one unless mmap is clearly faster.
 - **MV3 `webRequest` can observe but can't read response bodies.** The extension must fetch the manifest itself (or the engine fetches it with the forwarded cookies/headers).
-- **Native Messaging host** is registered on Windows under `HKCU\Software\Google\Chrome\NativeMessagingHosts\<name>`; messages are length-prefixed JSON, max 1 MB from host to browser (64 MiB from browser to host).
+- **Native Messaging host** is registered per browser under HKCU (Chrome, Edge, Mozilla) `\NativeMessagingHosts\<name>`. Firefox launches the host with the manifest path and the add-on ID as arguments; Chromium launches it with the extension origin. messages are length-prefixed JSON, max 1 MB from host to browser (64 MiB from browser to host).
 
 ## Verified
 - Unit tests: Native Messaging framing (limits, truncation, invalid JSON), pipe round-trip, single-instance pipe, SID-based pipe name, all four test servers (protocol, full body, range behaviour, Alt-Svc).
+- Registration script (2026-10-12): it registers the Chrome, Edge and Firefox keys and manifests. `-Browsers` limits it to the browsers you name, and `-Unregister` removes everything. A Firefox-style launch of `nmhost.exe` reached the engine.
 - Manual check (2026-10-12): engine started; a framed message piped into `nmhost.exe` reached the engine and its reply came back; nmhost exits cleanly on EOF; a second engine is refused.
 
 ## Not done yet
