@@ -35,7 +35,7 @@ go test -count=1 ./...
 - Network tests use `internal/testserver` (local HTTP/1.1 with and without ranges, HTTP/2, HTTP/3). Never hit the real internet in tests.
 
 ## Workflow
-- Branch, then open a PR. Merge rules: see DECISIONS.md once the repo exists.
+- Work in `xoGUYFAWKSxo/internet-downloader` (public, remote `origin`). Branch, then open a PR. Once the `build-and-test` check passes green, merge it yourself with `gh pr merge N --merge`; no need to ask. Never merge a PR whose CI failed or is still running. Wait with `gh run watch <id> --exit-status`.
 - Commit as `xoGUYFAWKSxo <206061236+xoGUYFAWKSxo@users.noreply.github.com>`. Never commit with a personal email address.
 - Commit messages: write them to a file and use `git commit -F`, in UTF-8 without a BOM.
 - Update `STATUS.md` when a PR merges. Add to `DECISIONS.md` when the user makes a choice.

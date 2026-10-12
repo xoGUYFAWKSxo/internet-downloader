@@ -2,6 +2,8 @@
 
 These are settled. Don't reopen them unless the user asks. Newest first.
 
+- **2026-10-12: Merge on green CI.** Claude may merge its own PRs without asking once the `build-and-test` check passes. A failed or pending check is never merged. GitHub auto-merge is off; wait with `gh run watch <id> --exit-status`, then `gh pr merge N --merge`.
+
 - **2026-10-12: The open questions were left to Claude's judgement.** The user asked Claude to pick. The five decisions below are those picks.
 - **2026-10-12: Go for all native code.** That covers the engine, the Native Messaging relay and the UI backend, so there's one toolchain and one language. Go's standard library covers HTTP/1.1 and HTTP/2. HTTP/3 uses `quic-go`. Rust was dropped: it's harder to maintain for this team, and there was no measured need for it.
 - **2026-10-12: Three processes.** (1) `engine.exe`: a background process that starts at login, owns the tray icon, does all downloads, and keeps running when the window is closed. (2) `nmhost.exe`: a small relay that the browser launches. It forwards the extension's JSON messages to the engine and holds no download logic. (3) `ui.exe`: a Wails v2 window (WebView2 + TypeScript), opened from the tray. The engine is the only process that writes files or the database. Why: downloads must survive the UI closing, and Chrome kills the Native Messaging host when the extension disconnects.
