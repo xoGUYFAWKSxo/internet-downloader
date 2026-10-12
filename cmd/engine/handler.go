@@ -30,10 +30,18 @@ type engine struct {
 	log   io.Writer
 	now   func() time.Time
 	probe probe.Options // tests point this at their own certificates
+	dir   string        // where downloads are saved
+	dl    downloads
+	// finished, if set, is called when a download stops for any reason.
+	finished func(id uint64)
 }
 
 func newEngine(log io.Writer) *engine {
-	return &engine{inbox: media.NewInbox(100), log: log, now: time.Now}
+	return &engine{inbox: media.NewInbox(100), log: log, now: time.Now, dir: downloadDir()}
+}
+
+type idRequest struct {
+	ID uint64 `json:"id"`
 }
 
 func payload(v any) json.RawMessage {
@@ -54,13 +62,32 @@ func (e *engine) handle(m ipc.Message) ipc.Message {
 	case "media.list":
 		return ipc.Message{Type: "media.list", Payload: payload(e.inbox.Summaries())}
 	case "media.probe":
-		var in struct {
-			ID uint64 `json:"id"`
-		}
+		var in idRequest
 		if err := json.Unmarshal(m.Payload, &in); err != nil {
 			return fail("invalid request: " + err.Error())
 		}
 		return e.probeMedia(in.ID)
+	case "media.download":
+		var in idRequest
+		if err := json.Unmarshal(m.Payload, &in); err != nil {
+			return fail("invalid request: " + err.Error())
+		}
+		id, err := e.startDownload(in.ID)
+		if err != nil {
+			return fail(err.Error())
+		}
+		return ipc.Message{Type: "media.download", Payload: payload(idRequest{id})}
+	case "downloads.list":
+		return ipc.Message{Type: "downloads.list", Payload: payload(e.dl.list())}
+	case "downloads.cancel":
+		var in idRequest
+		if err := json.Unmarshal(m.Payload, &in); err != nil {
+			return fail("invalid request: " + err.Error())
+		}
+		if err := e.cancelDownload(in.ID); err != nil {
+			return fail(err.Error())
+		}
+		return ipc.Message{Type: "downloads.cancel"}
 	case "extension":
 		var in fromExtension
 		if err := json.Unmarshal(m.Payload, &in); err != nil {

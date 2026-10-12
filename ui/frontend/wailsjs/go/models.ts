@@ -1,3 +1,40 @@
+export namespace fetch {
+	
+	export class Status {
+	    id: number;
+	    name: string;
+	    size: number;
+	    done: number;
+	    state: string;
+	    error?: string;
+	    path?: string;
+	    protocol?: string;
+	    mode?: string;
+	    streams?: number;
+	    started: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Status(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.size = source["size"];
+	        this.done = source["done"];
+	        this.state = source["state"];
+	        this.error = source["error"];
+	        this.path = source["path"];
+	        this.protocol = source["protocol"];
+	        this.mode = source["mode"];
+	        this.streams = source["streams"];
+	        this.started = source["started"];
+	    }
+	}
+
+}
+
 export namespace main {
 	
 	export class EngineStatus {

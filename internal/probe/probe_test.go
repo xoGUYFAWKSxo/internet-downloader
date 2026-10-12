@@ -188,7 +188,7 @@ func TestContentRange(t *testing.T) {
 		{"", 0, 0, false},
 	}
 	for _, c := range cases {
-		s, n, ok := contentRange(c.in)
+		s, n, ok := ContentRange(c.in)
 		if ok != c.ok || (ok && (s != c.start || n != c.total)) {
 			t.Errorf("%q: got %d %d %v", c.in, s, n, ok)
 		}

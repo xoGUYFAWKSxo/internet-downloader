@@ -100,6 +100,11 @@ func (e *StatusError) Error() string {
 	return msg
 }
 
+// NewStatusError describes a refusal in resp, with its Retry-After.
+func NewStatusError(resp *http.Response) *StatusError {
+	return &StatusError{Code: resp.StatusCode, RetryAfter: retryAfter(resp, time.Now())}
+}
+
 // Probe checks the server for r and returns what it found and the plan.
 func Probe(ctx context.Context, r Request, o Options) (*Result, error) {
 	if o.Timeout == 0 {
@@ -174,23 +179,8 @@ func firstByte(ctx context.Context, c *http.Client, r Request, target string) (*
 	if err != nil {
 		return nil, "", err
 	}
-	for k, v := range r.Headers {
-		switch strings.ToLower(k) {
-		case "range", "cookie", "host", "accept-encoding":
-			continue
-		}
-		req.Header.Set(k, v)
-	}
-	if r.Referer != "" && req.Header.Get("Referer") == "" {
-		req.Header.Set("Referer", r.Referer)
-	}
-	if ck := cookieHeader(r.Cookies); ck != "" {
-		// Go drops this header if a redirect leaves the host, as a browser would.
-		req.Header.Set("Cookie", ck)
-	}
+	SetHeaders(req.Header, r)
 	req.Header.Set("Range", "bytes=0-0")
-	// Sizes and ranges must count the file's own bytes, not compressed ones.
-	req.Header.Set("Accept-Encoding", "identity")
 
 	resp, err := c.Do(req)
 	if err != nil {
@@ -212,7 +202,7 @@ func firstByte(ctx context.Context, c *http.Client, r Request, target string) (*
 	encoded := ce(resp.Header.Get("Content-Encoding"))
 	switch resp.StatusCode {
 	case http.StatusPartialContent:
-		start, total, ok := contentRange(resp.Header.Get("Content-Range"))
+		start, total, ok := ContentRange(resp.Header.Get("Content-Range"))
 		if !ok || start != 0 {
 			return nil, "", errors.New("the server's reply to a range request couldn't be read")
 		}
@@ -221,13 +211,13 @@ func firstByte(ctx context.Context, c *http.Client, r Request, target string) (*
 		res.Size = resp.ContentLength
 	case http.StatusRequestedRangeNotSatisfiable:
 		// Only an empty file has no byte 0.
-		if _, total, ok := contentRange(resp.Header.Get("Content-Range")); ok && total == 0 {
+		if _, total, ok := ContentRange(resp.Header.Get("Content-Range")); ok && total == 0 {
 			res.Size, res.Ranges = 0, true
 			break
 		}
 		return nil, "", &StatusError{Code: resp.StatusCode}
 	default:
-		return nil, "", &StatusError{Code: resp.StatusCode, RetryAfter: retryAfter(resp, time.Now())}
+		return nil, "", NewStatusError(resp)
 	}
 	if encoded {
 		res.Size = -1 // the length is of the compressed bytes
@@ -253,6 +243,27 @@ func choose(protocol string, ranges bool, size int64) Plan {
 	}
 }
 
+// SetHeaders gives a request the browser's headers, Referer and cookies, and
+// asks for the file's own bytes rather than a compressed copy, so sizes and
+// ranges count the same bytes.
+func SetHeaders(h http.Header, r Request) {
+	for k, v := range r.Headers {
+		switch strings.ToLower(k) {
+		case "range", "cookie", "host", "accept-encoding":
+			continue
+		}
+		h.Set(k, v)
+	}
+	if r.Referer != "" && h.Get("Referer") == "" {
+		h.Set("Referer", r.Referer)
+	}
+	if ck := cookieHeader(r.Cookies); ck != "" {
+		// Go drops this header if a redirect leaves the host, as a browser would.
+		h.Set("Cookie", ck)
+	}
+	h.Set("Accept-Encoding", "identity")
+}
+
 func protocolName(major int) string {
 	switch major {
 	case 3:
@@ -263,8 +274,8 @@ func protocolName(major int) string {
 	return HTTP1
 }
 
-// contentRange parses "bytes 0-0/1234". An unknown total ("/*") gives -1.
-func contentRange(v string) (start, total int64, ok bool) {
+// ContentRange parses "bytes 0-0/1234". An unknown total ("/*") gives -1.
+func ContentRange(v string) (start, total int64, ok bool) {
 	rest, found := strings.CutPrefix(strings.TrimSpace(v), "bytes ")
 	if !found {
 		return 0, 0, false
