@@ -1,5 +1,5 @@
 // Command nmhost is the Native Messaging host the browser launches. It only
-// relays: each message from the extension goes to the engine over the pipe,
+// relays: each message (wrapped with the calling browser's identity) from the extension goes to the engine over the pipe,
 // and the engine's reply goes back. Stdout carries protocol frames only, so
 // diagnostics go to stderr.
 package main
@@ -15,6 +15,12 @@ import (
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/ipc"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/nativemsg"
 )
+
+// envelope tells the engine which browser and extension sent the message.
+type envelope struct {
+	caller
+	Message json.RawMessage `json:"message"`
+}
 
 type reply struct {
 	OK      bool            `json:"ok"`
@@ -41,6 +47,7 @@ func dial() (*ipc.Client, error) {
 }
 
 func main() {
+	from := callerFromArgs(os.Args[1:])
 	var client *ipc.Client
 	defer func() {
 		if client != nil {
@@ -63,7 +70,12 @@ func main() {
 				continue
 			}
 		}
-		resp, err := client.Call(ipc.Message{Type: "extension", Payload: msg})
+		payload, err := json.Marshal(envelope{caller: from, Message: msg})
+		if err != nil {
+			send(reply{Error: "Couldn't forward the message: " + err.Error()})
+			continue
+		}
+		resp, err := client.Call(ipc.Message{Type: "extension", Payload: payload})
 		if err != nil {
 			client.Close()
 			client = nil
