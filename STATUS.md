@@ -1,8 +1,8 @@
 # Status
 
-_Last updated: 2026-10-12, branch phase0-scaffold._
+_Last updated: 2026-10-12, main after PR #4._
 
-**Project status: Phase 0 complete (pending merge of the UI PR).** Go module, IPC, Native Messaging framing, engine and relay skeletons, test servers and CI are built. The extension skeleton (Chrome, Firefox, Edge) with a "Check connection to the app" popup, and the Native Messaging registration script, are done. The Wails window shows whether the engine is running. Next: Phase 1 (stream sniffing in the extension).
+**Project status: Phase 0 complete (PRs #1-#4).** Go module, IPC, Native Messaging framing, engine and relay skeletons, test servers and CI are built. The extension skeleton (Chrome, Firefox, Edge) with a "Check connection to the app" popup, and the Native Messaging registration script, are done. The Wails window shows whether the engine is running. Next: Phase 1 (stream sniffing in the extension).
 
 ## Repository
 - Local folder: `C:\Users\Allen\OneDrive\Documents\projects\internet-downloader`.
