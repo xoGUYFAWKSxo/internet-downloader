@@ -59,11 +59,15 @@ async function refreshMedia() {
         check.addEventListener('click', () => checkServer(m.id, check));
         const result = checks.get(m.id);
         li.append(title, el('div', 'url', m.url), el('div', 'meta', details.join(' · ')), check);
+        const dl = document.createElement('button');
+        dl.textContent = 'Download';
+        li.append(' ', dl);
         if (m.kind === 'video' || m.kind === 'audio') {
-            const dl = document.createElement('button');
-            dl.textContent = 'Download';
             dl.addEventListener('click', () => startDownload(m.id, dl));
-            li.append(' ', dl);
+        } else {
+            // Say why on the item itself, not only in a note under the list.
+            dl.disabled = true;
+            li.append(el('div', 'probe', `${LABEL[m.kind] ?? m.kind} streams can't be downloaded yet; that comes in the next version. Plain video and audio files can.`));
         }
         if (result) li.append(el('div', 'probe ' + result.cls, result.text));
         return li;

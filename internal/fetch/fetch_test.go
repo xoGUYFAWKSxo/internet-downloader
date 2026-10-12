@@ -157,7 +157,8 @@ func TestBadServers(t *testing.T) {
 			w.Write(body[:100])
 		}, "connection ended"},
 		"wrong part": {func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Range", "bytes 0-99/"+itoa(size))
+			// Offset 1 matches no part, so every part sees the wrong range.
+			w.Header().Set("Content-Range", "bytes 1-100/"+itoa(size))
 			w.WriteHeader(http.StatusPartialContent)
 			w.Write(body[:100])
 		}, "wrong part"},
