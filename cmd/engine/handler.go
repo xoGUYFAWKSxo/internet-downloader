@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/ipc"
+	"github.com/xoGUYFAWKSxo/internet-downloader/internal/journal"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/media"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/probe"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/stream"
@@ -38,10 +39,17 @@ type engine struct {
 	ffmpeg string
 	// finished, if set, is called when a download stops for any reason.
 	finished func(id uint64)
+	// jr saves the download list and progress; nil keeps them in memory.
+	jr *journal.Journal
+	// retries are the pauses before trying a dropped download again.
+	retries []time.Duration
+	// checkpointEvery is how often a download's progress is committed.
+	checkpointEvery time.Duration
 }
 
 func newEngine(log io.Writer) *engine {
-	return &engine{inbox: media.NewInbox(100), log: log, now: time.Now, dir: downloadDir(), ffmpeg: stream.FFmpeg()}
+	return &engine{inbox: media.NewInbox(100), log: log, now: time.Now, dir: downloadDir(), ffmpeg: stream.FFmpeg(),
+		retries: []time.Duration{5 * time.Second, 15 * time.Second, 45 * time.Second}, checkpointEvery: 3 * time.Second}
 }
 
 type idRequest struct {
@@ -92,6 +100,15 @@ func (e *engine) handle(m ipc.Message) ipc.Message {
 			return fail(err.Error())
 		}
 		return ipc.Message{Type: "downloads.cancel"}
+	case "downloads.resume":
+		var in idRequest
+		if err := json.Unmarshal(m.Payload, &in); err != nil {
+			return fail("invalid request: " + err.Error())
+		}
+		if err := e.resumeDownload(in.ID); err != nil {
+			return fail(err.Error())
+		}
+		return ipc.Message{Type: "downloads.resume"}
 	case "extension":
 		var in fromExtension
 		if err := json.Unmarshal(m.Payload, &in); err != nil {

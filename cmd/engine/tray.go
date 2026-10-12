@@ -73,9 +73,9 @@ func trayTip(running int) string {
 
 func quitQuestion(running int) string {
 	if running == 1 {
-		return "A download is still running. Quit and stop it?"
+		return "A download is still running. Quit anyway?\n\nA file download is paused and can be resumed later; a stream has to start again."
 	}
-	return fmt.Sprintf("%d downloads are still running. Quit and stop them?", running)
+	return fmt.Sprintf("%d downloads are still running. Quit anyway?\n\nFile downloads are paused and can be resumed later; streams have to start again.", running)
 }
 
 // openWindow starts ui.exe from the engine's folder. A second copy hands

@@ -13,12 +13,12 @@ Desktop download manager for Windows: a background download engine, a desktop UI
 - Default max physical TCP connections per download (HTTP/1.1 fallback): 4.
 - One pre-allocated output file per download. Never write multiple part-files.
 
-## Layout (planned; built so far: `cmd/engine`, `cmd/nmhost`, `internal/ipc`, `internal/media`, `internal/nativemsg`, `internal/probe`, `internal/fetch`, `internal/outfile`, `internal/stream`, `internal/testserver`, `internal/launch`, `extension/`, `installer/install.ps1`, `installer/register-native-host.ps1`, `ui/`)
+## Layout (planned; built so far: `cmd/engine`, `cmd/nmhost`, `internal/ipc`, `internal/media`, `internal/nativemsg`, `internal/probe`, `internal/fetch`, `internal/outfile`, `internal/stream`, `internal/testserver`, `internal/launch`, `internal/journal`, `extension/`, `installer/install.ps1`, `installer/register-native-host.ps1`, `ui/`)
 Windows 10/11 x64, runs as the normal user, never elevated. The root Go module holds the engine, relay and `internal/`. `ui/` is a nested module (Wails needs its own `go.mod`) that uses the root module through a `replace ../` line:
 - `cmd/engine/`: `engine.exe`. Started on demand by the window or the relay (`internal/launch`, from the same folder), keeps running after they exit, owns the tray icon (Quit stops it), does all downloads, and is the only process that writes files or the database.
 - `cmd/nmhost/`: `nmhost.exe`. Native Messaging relay: browser JSON in, then out over the pipe to the engine. No download logic.
 - `ui/`: `ui.exe`. A Wails v2 app (WebView2 + TypeScript frontend) that talks to the engine over the pipe.
-- `internal/`: engine packages (probe, transfer, storage, media, journal, ipc).
+- `internal/`: engine packages (probe, fetch, outfile, stream, media, journal, ipc, launch). The saved download list and range log: `%LOCALAPPDATA%\InternetDownloader\downloads.db`.
 - `extension/`: MV3 extension for Chrome, Firefox and Edge. Firefox MV3 needs `background.scripts` (not `service_worker`) and `browser_specific_settings.gecko.id`.
 - FFmpeg (for joining stream tracks) is looked up next to `engine.exe`, then on PATH; tests use a stand-in.
 - `installer/`: installer, Native Messaging registration (`installer/register-native-host.ps1`: HKCU, Chrome, Edge and Firefox), bundled `ffmpeg.exe`.

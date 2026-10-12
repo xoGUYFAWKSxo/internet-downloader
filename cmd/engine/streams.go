@@ -24,14 +24,17 @@ import (
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/stream"
 )
 
+// workPrefix starts the name of a stream's hidden work folder.
+const workPrefix = ".internet-downloader-"
+
 // downloadStream downloads an HLS or DASH stream: each track's segments in
 // parallel into a work folder beside the final file, then FFmpeg joins the
 // tracks into one file.
 func (e *engine) downloadStream(c media.Context) uint64 {
-	return e.start(c.URL, func(ctx context.Context, j *job) {
+	return e.start(c.URL, nil, func(ctx context.Context, j *job) {
 		path, size, err := e.runStream(ctx, j, c)
 		if err != nil {
-			e.fail(j, err)
+			e.stopped(ctx, j, err)
 			return
 		}
 		e.done(j, path, size)
@@ -52,13 +55,18 @@ func (e *engine) runStream(ctx context.Context, j *job, c media.Context) (string
 	if err != nil {
 		return "", 0, err
 	}
+	// Recorded so a crash's leftovers are found and deleted at the next start.
+	e.dl.update(j, func(j *job) { j.part = out.Path() })
+	if e.jr != nil {
+		e.jr.SetFile(j.ID, out.Path(), -1, "")
+	}
 	kept := false
 	defer func() {
 		if !kept {
 			out.Abort()
 		}
 	}()
-	work, err := os.MkdirTemp(e.dir, ".internet-downloader-")
+	work, err := os.MkdirTemp(e.dir, workPrefix)
 	if err != nil {
 		return "", 0, err
 	}

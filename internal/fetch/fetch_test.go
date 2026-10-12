@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -381,10 +382,90 @@ func TestIfRange(t *testing.T) {
 		{"", "", ""},
 	}
 	for _, c := range cases {
-		if got := ifRange(&probe.Result{ETag: c.etag, LastModified: c.lm}); got != c.want {
+		if got := Validator(&probe.Result{ETag: c.etag, LastModified: c.lm}); got != c.want {
 			t.Errorf("%+v: got %q", c, got)
 		}
 	}
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
+
+func TestResumeFetchesOnlyMissing(t *testing.T) {
+	body := testserver.Content(size)
+	var mu sync.Mutex
+	var asked []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		asked = append(asked, r.Header.Get("Range"))
+		mu.Unlock()
+		w.Header().Set("ETag", `"v1"`)
+		http.ServeContent(w, r, "f.bin", time.Time{}, bytes.NewReader(body))
+	}))
+	defer srv.Close()
+	res := &probe.Result{URL: srv.URL, Protocol: probe.HTTP1, Size: size, ETag: `"v1"`, Plan: probe.Plan{Mode: probe.Ranges, Streams: 4, Connections: 4}}
+	// An earlier run got the first 1 MiB and the last 100 bytes.
+	first, err := outfile.Create(t.TempDir(), "f.bin", size)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.WriteAt(body[:1<<20], 0)
+	first.WriteAt(body[size-100:], size-100)
+	have := first.Have()
+	first.Close()
+	o, err := outfile.Open(first.Path(), size, have)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Download(context.Background(), probe.Request{URL: srv.URL}, res, o, Options{}); err != nil {
+		o.Abort()
+		t.Fatal(err)
+	}
+	path, err := o.Finish()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(path); !bytes.Equal(b, body) {
+		t.Fatal("the resumed file differs")
+	}
+	for _, rng := range asked {
+		var a, b int64
+		if _, err := fmt.Sscanf(rng, "bytes=%d-%d", &a, &b); err != nil || a < 1<<20 || b >= size-100 {
+			t.Errorf("asked again for %q", rng)
+		}
+	}
+}
+
+func TestPieces(t *testing.T) {
+	rg := func(a, b int64) outfile.Range { return outfile.Range{Start: a, End: b} }
+	ps := pieces([]outfile.Range{rg(0, 10), rg(20, 60), rg(90, 100)}, 4)
+	got := [][2]int64{}
+	for _, p := range ps {
+		got = append(got, [2]int64{p.pos, p.end})
+	}
+	want := [][2]int64{{0, 10}, {20, 40}, {90, 100}, {40, 60}}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("pieces = %v", got)
+	}
+	if ps := pieces([]outfile.Range{rg(100, 110)}, 2); ps[0].pos != 100 || ps[1].end != 110 {
+		t.Fatalf("one span: %v %v", *ps[0], *ps[1])
+	}
+}
+
+func TestDropped(t *testing.T) {
+	cases := []struct {
+		err  error
+		want bool
+	}{
+		{fmt.Errorf("%w after 1 of 2 bytes", ErrDropped), true},
+		{&net.OpError{Op: "read", Err: errors.New("reset")}, true},
+		{&probe.StatusError{Code: 503}, true},
+		{&probe.StatusError{Code: 404}, false},
+		{ErrChanged, false},
+		{context.Canceled, false},
+	}
+	for _, c := range cases {
+		if got := Dropped(c.err); got != c.want {
+			t.Errorf("%v: got %v", c.err, got)
+		}
+	}
+}
