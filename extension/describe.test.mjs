@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseHLS, parseDASH, sniffMP4, findMoov, fileInfo, describe, isoSeconds, clock, key } from "./src/describe.js";
+import { parseHLS, parseDASH, sniffMP4, findMoov, fileInfo, pick, playlistFor, CLEAR_LEAD, describe, isoSeconds, clock, key } from "./src/describe.js";
 
 const V = "https://v.redd.it/abc/";
 const MASTER = `#EXTM3U
@@ -166,4 +166,32 @@ test("clock and key", () => {
   assert.equal(clock(3723), "1:02:03");
   assert.equal(clock(0), "");
   assert.equal(key("https://a.example/x/y.m3u8?t=1"), "a.example/x/y.m3u8");
+});
+
+test("pick chooses what a right-click means", () => {
+  const hls = (url, seenAt, extra = {}) => ({ url, kind: "hls", seenAt, info: parseHLS("#EXTM3U\n#EXTINF:2,\na.ts\n#EXT-X-ENDLIST\n", url), ...extra });
+  const a = hls("https://cdn.example/a/index.m3u8", 1000);
+  const b = hls("https://cdn.example/b/index.m3u8", 2000);
+  const part = { url: "https://cdn.example/a/clip.mp4?x=1", kind: "video", seenAt: 0, info: { type: "none" } };
+  a.info.files = ["https://cdn.example/a/clip.mp4"];
+  assert.deepEqual(pick([], "blob:https://site/1"), {});
+  assert.equal(pick([a], "blob:https://site/1").item, a);
+  assert.deepEqual(pick([a, b], "blob:https://site/1"), { ambiguous: true }, "both loaded within 3 s");
+  b.activeAt = 1000 + CLEAR_LEAD + 1;
+  assert.equal(pick([a, b], "blob:https://site/1").item, b, "b is clearly the one playing");
+  assert.equal(pick([a, b, part], "https://cdn.example/a/clip.mp4").item, a, "a part leads to its whole stream");
+  assert.deepEqual(pick([a], "https://other.example/x.mp4"), { url: "https://other.example/x.mp4" });
+  const live = { url: "https://cdn.example/l.m3u8", kind: "hls", seenAt: 9e9, info: parseHLS("#EXTM3U\n#EXTINF:2,\na.ts\n", "https://cdn.example/l.m3u8") };
+  assert.equal(pick([a, live], undefined).item, a, "live streams can't be saved, so aren't picked");
+});
+
+test("playlistFor matches segments to the deepest playlist folder", () => {
+  const items = [
+    { url: "https://cdn.example/v/master.m3u8", kind: "hls" },
+    { url: "https://cdn.example/v/720/index.m3u8?t=1", kind: "hls" },
+    { url: "https://cdn.example/v/720/clip.mp4", kind: "video" },
+  ];
+  assert.equal(playlistFor(items, "https://cdn.example/v/720/seg/9.ts").url, items[1].url);
+  assert.equal(playlistFor(items, "https://cdn.example/v/a/1.aac").url, items[0].url);
+  assert.equal(playlistFor(items, "https://cdn.other/v/720/9.ts"), null);
 });

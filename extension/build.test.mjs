@@ -35,7 +35,7 @@ test("firefox manifest", () => {
 test("both manifests can watch requests and use ES modules", () => {
   for (const t of ["chrome", "firefox"]) {
     const m = manifestFor(t);
-    for (const p of ["webRequest", "cookies", "storage"]) assert.ok(m.permissions.includes(p), `${t} ${p}`);
+    for (const p of ["webRequest", "cookies", "storage", "contextMenus", "notifications"]) assert.ok(m.permissions.includes(p), `${t} ${p}`);
     assert.deepEqual(m.host_permissions, ["<all_urls>"]);
     assert.equal(m.background.type, "module");
   }

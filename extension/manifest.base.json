@@ -7,11 +7,19 @@
     "nativeMessaging",
     "webRequest",
     "cookies",
-    "storage"
+    "storage",
+    "contextMenus",
+    "notifications"
   ],
+  "icons": {
+    "128": "icon.png"
+  },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Internet Downloader"
+    "default_title": "Internet Downloader",
+    "default_icon": {
+      "128": "icon.png"
+    }
   },
   "chrome": {
     "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0YosuVjRwCjWL1FZ3HyxKqfeG2zjs8Gf/1mkvn+sXceYPq3sqHGZpuMLYytfbYDZih5mCTk39COVA3ew1kVu6wQrmO2h8E9T23mNjHogut7pnHWdSVuJcjHein4/xpH1RBF/Zwc3yY4/muegNKxRTniZlGwO3a59BFJjUNteEnF0PCxtAtrhSadCwTNIERDApjl0sy2mTBk9fEg4cG5PT3Iej+W7gT9rpVKOGYLigNbcODUpc4RHCL3F2ccexaoq0eGsC/M5cheaxOlWUoWx0N6N/aRR2tf54aLjR5qb86wKWEIqinRfhVOIE2i8TJarIS0ckR2YdJBscE2r6uNC1wIDAQAB",

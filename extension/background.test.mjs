@@ -12,25 +12,43 @@ const session = {};
 const sent = [];
 const badges = {};
 const cookieQueries = [];
+const menuItems = new Map();
+const notes = [];
+let popups = 0;
 globalThis.chrome = {
   storage: { session: {
     get: async () => ({ ...session }),
     set: async (o) => Object.assign(session, o),
     remove: async (k) => delete session[k],
   } },
-  action: { setBadgeText: async ({ tabId, text }) => { badges[tabId] = text; } },
+  action: {
+    setBadgeText: async ({ tabId, text }) => { badges[tabId] = text; },
+    openPopup: async () => { popups++; },
+  },
+  contextMenus: {
+    removeAll: async () => menuItems.clear(),
+    create: (o) => menuItems.set(o.id, { ...o }),
+    update: async (id, o) => Object.assign(menuItems.get(id), o),
+    onClicked: event(),
+  },
+  notifications: { create: async (o) => { notes.push(o); } },
   webRequest: {
     OnSendHeadersOptions: { EXTRA_HEADERS: "extraHeaders" },
     onSendHeaders: event(), onHeadersReceived: event(), onErrorOccurred: event(), onBeforeRequest: event(),
   },
-  tabs: { onRemoved: event(), get: async (id) => ({ id, url: "https://site.example/watch", title: "A video" }) },
+  tabs: {
+    onRemoved: event(), onActivated: event(),
+    get: async (id) => ({ id, url: "https://site.example/watch", title: "A video" }),
+    query: async () => [{ id: 7 }],
+  },
   cookies: { getAll: async (q) => {
     cookieQueries.push(q);
     if ("partitionKey" in q) throw new Error("unsupported");
     return [{ name: "sid", value: "s1", domain: "cdn.example", path: "/" }];
   } },
   runtime: {
-    onMessage: event(),
+    onMessage: event(), onInstalled: event(), onStartup: event(),
+    getURL: (p) => "chrome-extension://x/" + p,
     sendNativeMessage: async (_host, msg) => { sent.push(msg); return { ok: true, payload: { id: 1 } }; },
   },
 };
@@ -87,4 +105,57 @@ test("unknown stream and new page", async () => {
   await tick();
   assert.deepEqual(await ask({ type: "list", tabId: 7 }), []);
   assert.equal(badges[7], "");
+});
+
+test("right-click menu downloads the clicked or playing video", async () => {
+  globalThis.fetch = async () => ({ ok: true, status: 200, text: async () => "#EXTM3U\n#EXTINF:2,\nseg1.ts\n#EXT-X-ENDLIST\n" });
+  chrome.runtime.onInstalled.fire();
+  await tick();
+  assert.deepEqual(menuItems.get("download-media").contexts, ["video", "audio"]);
+  assert.equal(menuItems.get("download-playing").visible, false, "hidden while the page has nothing");
+
+  request("20", "https://cdn.example/v/master.m3u8", [], [{ name: "Content-Type", value: "application/vnd.apple.mpegurl" }]);
+  await tick();
+  assert.equal(menuItems.get("download-playing").visible, true);
+  const click = async (menuItemId, srcUrl) => {
+    chrome.contextMenus.onClicked.fire({ menuItemId, srcUrl }, { id: 7, url: "https://site.example/watch" });
+    for (let i = 0; i < 5; i++) await tick();
+  };
+
+  // Streamed video has a blob: address; the only stream on the page is it.
+  await click("download-media", "blob:https://site.example/1234");
+  let m = sent.at(-1);
+  assert.equal(m.type, "download");
+  assert.equal(m.media.url, "https://cdn.example/v/master.m3u8");
+  assert.equal(notes.at(-1).title, "Downloading");
+
+  // A plain file the page didn't list is sent as it is.
+  await click("download-media", "https://other.example/clip.mp4");
+  m = sent.at(-1);
+  assert.deepEqual([m.type, m.media.url, m.media.kind, m.media.referer], ["download", "https://other.example/clip.mp4", "video", "https://site.example/watch"]);
+
+  // Two streams loading at once: ask instead of guessing.
+  request("21", "https://cdn.example/w/other.m3u8", [], [{ name: "Content-Type", value: "application/vnd.apple.mpegurl" }]);
+  await tick();
+  const before = sent.length;
+  await click("download-playing", undefined);
+  assert.equal(popups, 1);
+  assert.equal(sent.length, before);
+
+  // Segments of the first stream keep loading: that's the playing one.
+  await new Promise((r) => setTimeout(r, 30));
+  const list = await ask({ type: "list", tabId: 7 });
+  for (const it of list) it.seenAt -= 10000; // both loaded a while ago
+  request("22", "https://cdn.example/v/seg5.ts", [], [{ name: "Content-Type", value: "video/mp2t" }]);
+  await tick();
+  await click("download-playing", undefined);
+  assert.equal(sent.length, before + 1);
+  assert.equal(sent.at(-1).media.url, "https://cdn.example/v/master.m3u8");
+
+  // Nothing on a new page.
+  wr.onBeforeRequest.fire({ tabId: 7, type: "main_frame" });
+  await tick();
+  await click("download-media", "blob:https://site.example/1");
+  assert.equal(notes.at(-1).title, "Nothing to download yet");
+  assert.equal(menuItems.get("download-playing").visible, false);
 });

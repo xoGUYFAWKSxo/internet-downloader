@@ -34,6 +34,16 @@ export function classify(url, contentType) {
 }
 
 // headerMap turns webRequest's [{name, value}] into a lower-cased object.
+// isSegment tells whether a request is one piece of a stream. Pieces aren't
+// listed, but they show which stream is playing.
+export function isSegment(url, contentType) {
+  try {
+    return SEGMENT.test(new URL(url).pathname.toLowerCase()) || SEGMENT_TYPES.includes(mimeOf(contentType));
+  } catch {
+    return false;
+  }
+}
+
 export function headerMap(list) {
   const out = {};
   for (const h of list ?? []) out[h.name.toLowerCase()] = h.value ?? "";
