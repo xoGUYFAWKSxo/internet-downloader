@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/ipc"
+	"github.com/xoGUYFAWKSxo/internet-downloader/internal/media"
 )
 
 // App is bound to the frontend; its exported methods become TypeScript calls.
@@ -52,4 +53,35 @@ func statusFromPong(resp ipc.Message, err error) EngineStatus {
 	}
 	json.Unmarshal(resp.Payload, &p)
 	return EngineStatus{Running: true, Version: p.Version, Message: "The download engine is running."}
+}
+
+// ReceivedMedia lists the streams the browser extension has sent, newest
+// first. Downloading them comes in a later phase.
+func (a *App) ReceivedMedia() ([]media.Summary, error) {
+	name, err := ipc.PipeName()
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 2*time.Second)
+	defer cancel()
+	c, err := ipc.Dial(ctx, name)
+	if err != nil {
+		return nil, errors.New("the download engine isn't running")
+	}
+	defer c.Close()
+	return summariesFrom(c.Call(ipc.Message{Type: "media.list"}))
+}
+
+func summariesFrom(resp ipc.Message, err error) ([]media.Summary, error) {
+	if err == nil && resp.Error != "" {
+		err = errors.New(resp.Error)
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out []media.Summary
+	if err := json.Unmarshal(resp.Payload, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

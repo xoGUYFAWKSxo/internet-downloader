@@ -19,3 +19,16 @@ func TestStatusFromPong(t *testing.T) {
 		t.Fatalf("engine error should not be running: %+v", s)
 	}
 }
+
+func TestSummariesFrom(t *testing.T) {
+	got, err := summariesFrom(ipc.Message{Type: "media.list", Payload: []byte(`[{"id":2,"kind":"hls","url":"https://x/a.m3u8"}]`)}, nil)
+	if err != nil || len(got) != 1 || got[0].Kind != "hls" {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+	if _, err := summariesFrom(ipc.Message{Type: "error", Error: "nope"}, nil); err == nil {
+		t.Fatal("engine error should be an error")
+	}
+	if got, err := summariesFrom(ipc.Message{Type: "media.list", Payload: []byte(`[]`)}, nil); err != nil || len(got) != 0 {
+		t.Fatalf("empty list: %+v, %v", got, err)
+	}
+}

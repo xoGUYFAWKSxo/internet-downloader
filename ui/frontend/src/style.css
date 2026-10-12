@@ -41,3 +41,15 @@ button { padding: 6px 14px; font: inherit; }
 .ok { color: var(--ok); }
 .bad { color: var(--bad); }
 .note { color: var(--muted); margin-top: 16px; }
+h2 { font-size: 15px; font-weight: 600; margin: 24px 0 8px; }
+#media { list-style: none; margin: 0; padding: 0; }
+#media li {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 8px;
+}
+#media .title { display: flex; gap: 8px; align-items: baseline; }
+#media .kind { font-size: 12px; font-weight: 600; color: var(--muted); }
+#media .url, #media .meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }

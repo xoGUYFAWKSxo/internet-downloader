@@ -3,20 +3,43 @@
   "name": "Internet Downloader",
   "version": "0.0.1",
   "description": "Sends downloads and media streams to the Internet Downloader app.",
-  "permissions": ["nativeMessaging"],
-  "action": { "default_popup": "popup.html", "default_title": "Internet Downloader" },
+  "permissions": [
+    "nativeMessaging",
+    "webRequest",
+    "cookies",
+    "storage"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Internet Downloader"
+  },
   "chrome": {
     "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0YosuVjRwCjWL1FZ3HyxKqfeG2zjs8Gf/1mkvn+sXceYPq3sqHGZpuMLYytfbYDZih5mCTk39COVA3ew1kVu6wQrmO2h8E9T23mNjHogut7pnHWdSVuJcjHein4/xpH1RBF/Zwc3yY4/muegNKxRTniZlGwO3a59BFJjUNteEnF0PCxtAtrhSadCwTNIERDApjl0sy2mTBk9fEg4cG5PT3Iej+W7gT9rpVKOGYLigNbcODUpc4RHCL3F2ccexaoq0eGsC/M5cheaxOlWUoWx0N6N/aRR2tf54aLjR5qb86wKWEIqinRfhVOIE2i8TJarIS0ckR2YdJBscE2r6uNC1wIDAQAB",
-    "background": { "service_worker": "background.js" }
+    "background": {
+      "service_worker": "background.js",
+      "type": "module"
+    }
   },
   "firefox": {
-    "background": { "scripts": ["background.js"] },
+    "background": {
+      "scripts": [
+        "background.js"
+      ],
+      "type": "module"
+    },
     "browser_specific_settings": {
       "gecko": {
         "id": "internet-downloader@xoguyfawksxo",
         "strict_min_version": "128.0",
-        "data_collection_permissions": { "required": ["none"] }
+        "data_collection_permissions": {
+          "required": [
+            "none"
+          ]
+        }
       }
     }
-  }
+  },
+  "host_permissions": [
+    "<all_urls>"
+  ]
 }
