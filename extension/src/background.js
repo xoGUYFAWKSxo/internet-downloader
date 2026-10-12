@@ -1,8 +1,8 @@
 // Watches each tab's network requests for media streams and, when the user
 // asks, sends one to the app with everything needed to fetch it the way the
 // browser did. All native messaging goes through here.
-import { classify, headerMap, totalSize, replayHeaders, worthListing, toCookie, dedupeCookies } from "./detect.js";
-import { parseHLS, parseDASH, sniffMP4, findMoov, fileInfo, SNIFF_BYTES, MAX_MOOV } from "./describe.js";
+import { classify, isSegment, headerMap, totalSize, replayHeaders, worthListing, toCookie, dedupeCookies } from "./detect.js";
+import { parseHLS, parseDASH, sniffMP4, findMoov, fileInfo, pick, playlistFor, describe, SNIFF_BYTES, MAX_MOOV } from "./describe.js";
 
 const api = globalThis.browser ?? globalThis.chrome;
 const HOST = "com.xoguyfawksxo.internet_downloader";
@@ -40,6 +40,20 @@ function save(tabId) {
 async function clearTab(tabId) {
   await ready;
   if (tabs.delete(tabId)) save(tabId);
+  updateMenu();
+}
+
+// touch notes that a stream's playlist is playing: its segments are loading.
+// Saved at most every few seconds, as segments arrive often.
+async function touch(tabId, segmentUrl) {
+  await ready;
+  const items = tabs.get(tabId);
+  const it = items && playlistFor([...items.values()], segmentUrl);
+  if (!it) return;
+  const now = Date.now();
+  const stale = now - (it.activeAt ?? 0) > 2000;
+  it.activeAt = now;
+  if (stale) save(tabId);
 }
 
 // Request headers arrive before the response; keep them until we know
@@ -60,7 +74,10 @@ api.webRequest.onHeadersReceived.addListener((d) => {
   if (d.tabId < 0 || d.statusCode >= 400) return;
   const resHeaders = headerMap(d.responseHeaders);
   const kind = classify(d.url, resHeaders["content-type"]);
-  if (!kind) return;
+  if (!kind) {
+    if (isSegment(d.url, resHeaders["content-type"])) touch(d.tabId, d.url);
+    return;
+  }
   const size = totalSize(resHeaders);
   if (!worthListing(kind, size)) return;
   const headers = replayHeaders(reqHeaders ?? {});
@@ -96,6 +113,7 @@ async function record(tabId, item) {
   items.set(item.url, item);
   if (items.size > MAX_PER_TAB) items.delete(items.keys().next().value);
   save(tabId);
+  updateMenu();
   if (!item.info && !reading.has(item.url)) {
     reading.add(item.url);
     const info = (await inspect(item).catch(() => null)) ?? { type: "none" };
@@ -200,10 +218,16 @@ async function fetchManifest(url) {
   }
 }
 
-async function send(tabId, url) {
+// send passes an item to the app. type "media" lists it in the window;
+// "download" (from the right-click menu) starts it as well.
+async function send(tabId, url, type = "media") {
   await ready;
   const item = tabs.get(tabId)?.get(url);
   if (!item) return { ok: false, error: "That stream isn't in this tab's list any more. Reload the page." };
+  return sendItem(tabId, item, type);
+}
+
+async function sendItem(tabId, item, type) {
   const tab = await api.tabs.get(tabId).catch(() => null);
   const media = {
     url: item.url,
@@ -216,8 +240,72 @@ async function send(tabId, url) {
     cookies: await cookiesFor(item.url),
   };
   if (item.kind === "hls" || item.kind === "dash") Object.assign(media, await fetchManifest(item.url));
-  return toApp({ type: "media", media });
+  return toApp({ type, media });
 }
+
+// The right-click menu. "Download this video" shows on video and audio; a
+// second entry shows anywhere on a page that has something to download, for
+// players that cover their video with their own controls.
+const menus = api.contextMenus ?? api.menus;
+const MENU_MEDIA = "download-media";
+const MENU_PAGE = "download-playing";
+
+// Menus survive the background stopping, so they're made on install and
+// browser start. Promises throughout: Firefox's browser.* takes no callbacks.
+async function createMenu() {
+  if (!menus) return;
+  await menus.removeAll();
+  menus.create({ id: MENU_MEDIA, title: "Download this with Internet Downloader", contexts: ["video", "audio"] });
+  menus.create({ id: MENU_PAGE, title: "Download the playing video with Internet Downloader",
+    contexts: ["page", "frame", "link", "image"], visible: false });
+  menuShown = false;
+  updateMenu();
+}
+api.runtime.onInstalled?.addListener(() => createMenu().catch(() => {}));
+api.runtime.onStartup?.addListener(() => createMenu().catch(() => {}));
+
+let menuShown = false;
+// updateMenu shows the page entry only on a tab with something to download.
+async function updateMenu() {
+  if (!menus) return;
+  const [tab] = await api.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []);
+  const items = tab ? [...(tabs.get(tab.id)?.values() ?? [])] : [];
+  const show = describe(items).some((g) => !/^(Copy-protected|Live)/.test(g.title));
+  if (show === menuShown) return;
+  menuShown = show;
+  Promise.resolve(menus.update(MENU_PAGE, { visible: show })).catch(() => {});
+}
+api.tabs.onActivated?.addListener(() => updateMenu());
+
+function notify(title, message) {
+  api.notifications?.create({ type: "basic", iconUrl: api.runtime.getURL("icon.png"), title, message })?.catch(() => {});
+}
+
+async function menuClicked(info, tab) {
+  if (!tab || tab.id < 0) return;
+  await ready;
+  const items = [...(tabs.get(tab.id)?.values() ?? [])];
+  const choice = pick(items, info.menuItemId === MENU_MEDIA ? info.srcUrl : "");
+  if (choice.ambiguous) {
+    // Several videos loaded at the same time: let the person choose.
+    const opened = await api.action.openPopup?.().then(() => true, () => false);
+    if (!opened) notify("Which video?", "Several videos are loading on this page. Click the Internet Downloader button and choose one.");
+    return;
+  }
+  let item = choice.item;
+  if (!item && choice.url) {
+    item = { url: choice.url, kind: classify(choice.url, "") ?? (info.mediaType === "audio" ? "audio" : "video"),
+      contentType: "", referer: tab.url ?? "", headers: {} };
+  }
+  if (!item) {
+    notify("Nothing to download yet", "Start playing the video, then right-click it again.");
+    return;
+  }
+  const r = await sendItem(tab.id, item, "download");
+  if (r?.ok) notify("Downloading", (choice.title ?? "Video") + ". Progress shows in the Internet Downloader window.");
+  else notify("Couldn't download", r?.error ?? "No answer from the app.");
+}
+menus?.onClicked.addListener((info, tab) => { menuClicked(info, tab); });
 
 api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   switch (msg?.type) {

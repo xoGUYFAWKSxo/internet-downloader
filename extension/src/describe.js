@@ -335,7 +335,48 @@ export function describe(items) {
       detail: meta(it, r ? [r.kind === "video" ? quality(r.height) : kbps(r.bandwidth) || (r.name && /^\d+$/.test(r.name) ? r.name + " kbps" : "")] : [quality(it.info?.height)]),
     });
   }
-  // Whole videos with sound first; otherwise newest first, as listed.
+  // When each group last loaded anything: a playing video keeps loading.
+  for (const it of items) {
+    const g = groups.get(top(it));
+    if (g) g.active = Math.max(g.active ?? 0, it.seenAt ?? 0, it.activeAt ?? 0);
+  }
+  // Whole videos with sound first, then the most recently playing.
   const rank = (g) => (g.title === "Video with sound" ? 0 : 1);
-  return [...groups.values()].sort((a, b) => rank(a) - rank(b));
+  return [...groups.values()].sort((a, b) => rank(a) - rank(b) || b.active - a.active);
+}
+
+const CANT_SAVE = /^(Copy-protected|Live)/;
+// How far ahead of the others the playing video must be to be sure of it.
+export const CLEAR_LEAD = 3000;
+
+// pick chooses what a right-click on a video means. srcUrl is the address the
+// browser gives for the clicked video; streamed video has a blob: address
+// instead, and then the video that loaded something most recently is the one
+// playing. Returns {item, title} for a listed item, {url} for an unlisted
+// file, {ambiguous: true} when it can't tell, or {} when there's nothing.
+export function pick(items, srcUrl) {
+  const groups = describe(items).filter((g) => !CANT_SAVE.test(g.title));
+  if (/^https?:/i.test(srcUrl ?? "")) {
+    const k = key(srcUrl);
+    const g = groups.find((g) => [g.item, ...g.parts.map((p) => p.item)].some((it) => key(it.url) === k));
+    return g ? { item: g.item, title: g.title } : { url: srcUrl };
+  }
+  if (groups.length === 0) return {};
+  const recent = [...groups].sort((a, b) => b.active - a.active);
+  if (recent.length > 1 && recent[0].active - recent[1].active < CLEAR_LEAD) return { ambiguous: true };
+  return { item: recent[0].item, title: recent[0].title };
+}
+
+// playlistFor finds the playlist a segment belongs to: the one in the
+// deepest folder that holds the segment.
+export function playlistFor(items, segmentUrl) {
+  const dir = (u) => key(u).replace(/[^/]*$/, "");
+  const seg = dir(segmentUrl);
+  let best = null;
+  for (const it of items) {
+    if (it.kind !== "hls" && it.kind !== "dash") continue;
+    const d = dir(it.url);
+    if (seg.startsWith(d) && (!best || d.length > dir(best.url).length)) best = it;
+  }
+  return best;
 }

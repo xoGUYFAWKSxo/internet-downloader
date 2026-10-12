@@ -34,7 +34,7 @@ func TestHandle(t *testing.T) {
 		{"extension media", ext(`{"type":"media","media":{"url":"https://cdn.example/a.m3u8?token=t","kind":"hls","manifest":"#EXTM3U\n"}}`), "media.added", ""},
 		{"extension media invalid", ext(`{"type":"media","media":{"url":"ftp://x/a","kind":"video"}}`), "error", "The stream address"},
 		{"extension media drm", ext(`{"type":"media","media":{"url":"https://x/a.mpd","kind":"dash","manifest":"<MPD><ContentProtection/></MPD>"}}`), "error", "DRM"},
-		{"extension other", ext(`{"type":"download"}`), "error", "unknown message"},
+		{"extension other", ext(`{"type":"upload"}`), "error", "unknown message"},
 		{"extension bad json", ipc.Message{Type: "extension", Payload: []byte(`{`)}, "error", "invalid message"},
 		{"list", ipc.Message{Type: "media.list"}, "media.list", ""},
 		{"unknown", ipc.Message{Type: "nope"}, "error", "unknown request type"},
@@ -144,6 +144,32 @@ func TestDownloadReceivedMedia(t *testing.T) {
 		if strings.Contains(log.String(), secret) {
 			t.Fatalf("%s leaked: %s", secret, log.String())
 		}
+	}
+}
+
+// The right-click menu sends "download": the item is added and started in one go.
+func TestDownloadFromMenu(t *testing.T) {
+	s := testserver.Start(t, testserver.Content(1<<20))
+	e := newEngine(&bytes.Buffer{})
+	e.probe = probe.Options{RootCAs: s.RootCAs}
+	e.dir = t.TempDir()
+	stopped := make(chan uint64, 1)
+	e.finished = func(id uint64) { stopped <- id }
+	resp := e.handle(ext(`{"type":"download","media":{"url":"` + s.H2 + `","kind":"video"}}`))
+	var job idRequest
+	if err := json.Unmarshal(resp.Payload, &job); err != nil || resp.Type != "media.download" {
+		t.Fatalf("got %+v", resp)
+	}
+	if id := <-stopped; id != job.ID {
+		t.Fatalf("finished %d, want %d", id, job.ID)
+	}
+	var list []fetch.Status
+	json.Unmarshal(e.handle(ipc.Message{Type: "downloads.list"}).Payload, &list)
+	if len(list) != 1 || list[0].State != fetch.Done || list[0].Done != 1<<20 {
+		t.Fatalf("downloads %+v", list)
+	}
+	if r := e.handle(ext(`{"type":"download","media":{"url":"blob:https://site/x","kind":"video"}}`)); r.Type != "error" {
+		t.Fatalf("bad address accepted: %+v", r)
 	}
 }
 

@@ -102,6 +102,19 @@ func (e *engine) handle(m ipc.Message) ipc.Message {
 			return pong()
 		case "media":
 			return e.addMedia(in.Browser, in.Message.Media)
+		case "download":
+			// From the right-click menu: add the item and start it at once.
+			added := e.addMedia(in.Browser, in.Message.Media)
+			if added.Type != "media.added" {
+				return added
+			}
+			var item idRequest
+			json.Unmarshal(added.Payload, &item)
+			id, err := e.startDownload(item.ID)
+			if err != nil {
+				return fail(sentence(err))
+			}
+			return ipc.Message{Type: "media.download", Payload: payload(idRequest{id})}
 		}
 		return fail("unknown message from the browser: " + in.Message.Type)
 	default:

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  classify, totalSize, replayHeaders, headerMap, worthListing, fileName, formatBytes, dedupeCookies, toCookie,
+  classify, isSegment, totalSize, replayHeaders, headerMap, worthListing, fileName, formatBytes, dedupeCookies, toCookie,
 } from "./src/detect.js";
 
 test("classify", () => {
@@ -66,4 +66,11 @@ test("cookies", () => {
   assert.deepEqual(c, { name: "a", value: "1", domain: ".x", path: "/", secure: true, httpOnly: false, expires: 5 });
   assert.equal(toCookie({ name: "s", value: "", domain: "x", path: "/" }).expires, 0);
   assert.equal(dedupeCookies([c, { ...c }, { ...c, path: "/b" }]).length, 2);
+});
+
+test("isSegment", () => {
+  assert.equal(isSegment("https://cdn.example/v/seg5.ts", ""), true);
+  assert.equal(isSegment("https://cdn.example/v/chunk", "video/iso.segment"), true);
+  assert.equal(isSegment("https://cdn.example/v/film.mp4", "video/mp4"), false);
+  assert.equal(isSegment("not a url", ""), false);
 });
