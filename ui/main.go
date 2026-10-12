@@ -20,10 +20,10 @@ func main() {
 	app := &App{}
 	err := wails.Run(&options.App{
 		Title:     "Internet Downloader",
-		Width:     900,
-		Height:    600,
-		MinWidth:  600,
-		MinHeight: 400,
+		Width:     1040,
+		Height:    640,
+		MinWidth:  720,
+		MinHeight: 420,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

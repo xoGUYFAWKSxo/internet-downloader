@@ -5,6 +5,8 @@ import {probe} from '../models';
 import {fetch} from '../models';
 import {media} from '../models';
 
+export function AddURL(arg1:string):Promise<number>;
+
 export function CancelDownload(arg1:number):Promise<void>;
 
 export function CheckEngine():Promise<main.EngineStatus>;
@@ -15,7 +17,13 @@ export function Download(arg1:number):Promise<number>;
 
 export function Downloads():Promise<Array<fetch.Status>>;
 
+export function OpenFile(arg1:string):Promise<void>;
+
+export function PauseDownload(arg1:number):Promise<void>;
+
 export function ReceivedMedia():Promise<Array<media.Summary>>;
+
+export function RemoveDownloads(arg1:Array<number>,arg2:boolean):Promise<void>;
 
 export function ResumeDownload(arg1:number):Promise<void>;
 

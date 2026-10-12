@@ -146,6 +146,12 @@ func (j *Journal) End(s fetch.Status) error {
 	return tx.Commit()
 }
 
+// Delete forgets a download, with its ranges.
+func (j *Journal) Delete(id uint64) error {
+	_, err := j.db.Exec(`DELETE FROM downloads WHERE id = ?`, id)
+	return err
+}
+
 // Load gives every saved download, oldest first.
 func (j *Journal) Load() ([]Record, error) {
 	rows, err := j.db.Query(`SELECT id, status, request, part, size, validator FROM downloads ORDER BY id`)

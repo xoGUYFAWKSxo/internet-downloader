@@ -6,19 +6,63 @@
     <title>Internet Downloader</title>
 </head>
 <body>
-<main>
-    <h1>Internet Downloader</h1>
-    <section class="card">
-        <div id="engine-status">Checking the download engine…</div>
-        <button id="recheck">Check again</button>
-    </section>
-    <h2>Downloads</h2>
-    <ul id="downloads"></ul>
-    <p class="note" id="downloads-empty">No downloads yet. Plain video and audio files sent from the browser can be downloaded below; they are saved in your Downloads folder.</p>
-    <h2>Sent from the browser</h2>
-    <ul id="media"></ul>
-    <p class="note" id="media-empty">Nothing yet. Use the browser extension's "Send to app" button on a page with a video.</p>
-</main>
+<header class="toolbar">
+    <button id="tb-add" title="Download a web address"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v9M7.5 12h9"/></svg>Add URL</button>
+    <button id="tb-resume" title="Carry on with the selected downloads"><svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></svg>Resume</button>
+    <button id="tb-stop" title="Pause the selected downloads"><svg viewBox="0 0 24 24"><path d="M8 5.5v13M16 5.5v13"/></svg>Stop</button>
+    <button id="tb-stop-all" title="Pause every running download"><svg viewBox="0 0 24 24"><rect x="4" y="6" width="7" height="12" rx="1"/><rect x="13" y="6" width="7" height="12" rx="1"/></svg>Stop All</button>
+    <span class="sep"></span>
+    <button id="tb-delete" title="Take the selected downloads off the list (Del)"><svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V4.5h4V7M7 7l1 13h8l1-13"/></svg>Delete</button>
+    <button id="tb-delete-done" title="Take every finished download off the list"><svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V4.5h4V7M7 7l1 13h8l1-13"/><path d="M9.5 13.5l2 2 3.5-4"/></svg>Delete Completed</button>
+</header>
+<div class="body">
+    <nav class="sidebar" id="sidebar"></nav>
+    <main id="main">
+        <div class="table-wrap" id="table-wrap">
+            <table id="table">
+                <colgroup id="cols"></colgroup>
+                <thead><tr id="head"></tr></thead>
+                <tbody id="rows"></tbody>
+            </table>
+            <p class="empty" id="empty"></p>
+        </div>
+        <div class="media-view" id="media-view" hidden>
+            <ul id="media"></ul>
+            <p class="empty" id="media-empty">Nothing yet. Use the browser extension's "Send to app" button on a page with a video.</p>
+        </div>
+    </main>
+</div>
+<footer class="statusbar">
+    <span id="engine-status">Checking the download engine…</span>
+    <button id="recheck" hidden>Check again</button>
+    <span class="grow"></span>
+    <span id="totals"></span>
+</footer>
+<div class="menu" id="menu" hidden></div>
+<dialog id="add-dialog">
+    <form method="dialog" id="add-form">
+        <h2>Add URL</h2>
+        <label for="add-url">Address to download</label>
+        <input id="add-url" type="text" spellcheck="false" autocomplete="off" placeholder="https://"/>
+        <p class="note">Saved in your Downloads folder. Downloads that need you to be signed in work better from the browser's right-click menu, which sends your cookies along.</p>
+        <p class="bad" id="add-error"></p>
+        <div class="buttons">
+            <button type="submit" id="add-ok" class="primary">Download</button>
+            <button type="button" id="add-cancel">Cancel</button>
+        </div>
+    </form>
+</dialog>
+<dialog id="confirm-dialog">
+    <form method="dialog">
+        <h2 id="confirm-title"></h2>
+        <p id="confirm-text"></p>
+        <label class="check" id="confirm-files-label"><input type="checkbox" id="confirm-files"/> Also delete the downloaded files from disk</label>
+        <div class="buttons">
+            <button type="submit" value="ok" class="primary" id="confirm-ok">Delete</button>
+            <button type="submit" value="cancel">Cancel</button>
+        </div>
+    </form>
+</dialog>
 <script src="./src/main.ts" type="module"></script>
 </body>
 </html>
