@@ -3,7 +3,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -11,18 +10,6 @@ import (
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/ipc"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/version"
 )
-
-func handle(m ipc.Message) ipc.Message {
-	switch m.Type {
-	case "ping":
-		p, _ := json.Marshal(map[string]string{"version": version.Version})
-		return ipc.Message{Type: "pong", Payload: p}
-	case "extension":
-		return ipc.Message{Type: "error", Error: "downloads from the browser are not implemented yet"}
-	default:
-		return ipc.Message{Type: "error", Error: "unknown request type: " + m.Type}
-	}
-}
 
 func main() {
 	name, err := ipc.PipeName()
