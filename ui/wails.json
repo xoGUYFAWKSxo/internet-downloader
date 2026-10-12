@@ -1,0 +1,19 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "Internet Downloader",
+  "outputfilename": "ui",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "xoGUYFAWKSxo",
+    "email": "206061236+xoGUYFAWKSxo@users.noreply.github.com"
+  },
+  "info": {
+    "productName": "Internet Downloader",
+    "productVersion": "0.0.0",
+    "copyright": "GPL-3.0",
+    "comments": "Download manager window"
+  }
+}
