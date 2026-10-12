@@ -25,7 +25,7 @@ One Go module (Windows 10/11 x64, runs as the normal user, never elevated):
 Update this section when the real layout exists.
 
 ## Build and test
-Go is at `C:\Program Files\Goin` (add it to PATH in Git Bash: `export PATH="/c/Program Files/Go/bin:$PATH"`). Wails CLI: `%USERPROFILE%\goin\wails.exe`.
+Go is at `C:\Program Files\Go\bin` (add it to PATH in Git Bash: `export PATH="/c/Program Files/Go/bin:$PATH"`). Wails CLI: `%USERPROFILE%\go\bin\wails.exe`.
 ```
 go vet ./...
 go build -o bin/ ./cmd/...
