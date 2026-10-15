@@ -72,3 +72,11 @@ func TestIDArg(t *testing.T) {
 		t.Errorf("--ask=3: got %d", got)
 	}
 }
+
+func TestOptionsArg(t *testing.T) {
+	for args, want := range map[string]string{"": "", "--options": "general", "--options=scheduler": "scheduler", "--options=": "", "--progress=2": ""} {
+		if got := optionsArg(strings.Fields(args)); got != want {
+			t.Errorf("%q: got %q, want %q", args, got, want)
+		}
+	}
+}

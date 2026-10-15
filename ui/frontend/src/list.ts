@@ -1,4 +1,4 @@
-import {AddURL, CheckEngine, CheckServer, Download, Downloads, OpenFile, PauseDownload, ReceivedMedia, RemoveDownloads, ResumeDownload, ShowInFolder, ShowProgress} from '../wailsjs/go/main/App';
+import {AddToQueue, AddURL, CheckEngine, CheckServer, Download, Downloads, MoveInQueue, OpenFile, PauseDownload, QueueInfo, ReceivedMedia, RemoveDownloads, RemoveFromQueue, ResumeDownload, ShowInFolder, ShowOptions, ShowProgress, StartQueue, StopQueue} from '../wailsjs/go/main/App';
 import {ClipboardGetText} from '../wailsjs/runtime/runtime';
 import {$, duration, el, msg, percent, size} from './util';
 
@@ -45,6 +45,7 @@ const ICON = {
     unfinished: '<svg viewBox="0 0 16 16"><path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10"/></svg>',
     finished: '<svg viewBox="0 0 16 16"><path d="M3 8.5l3 3 7-7"/></svg>',
     browser: '<svg viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="10" rx="1"/><path d="M2 6h12"/></svg>',
+    queue: '<svg viewBox="0 0 16 16"><path d="M2.5 4h11M2.5 8h11M2.5 12h7"/></svg>',
 };
 
 type View = {id: string, label: string, icon: string, sub?: boolean, gap?: boolean, match?: (d: Status) => boolean};
@@ -53,6 +54,7 @@ const VIEWS: View[] = [
     ...Object.entries(TYPES).map(([t, {label}]) => ({id: t, label, icon: ICON.folder, sub: true, match: (d: Status) => typeOf(d.name) === t})),
     {id: 'unfinished', label: 'Unfinished', icon: ICON.unfinished, gap: true, match: (d: Status) => d.state !== 'done'},
     {id: 'finished', label: 'Finished', icon: ICON.finished, match: (d: Status) => d.state === 'done'},
+    {id: 'queue', label: 'Queue', icon: ICON.queue, gap: true, match: (d: Status) => !!d.queue},
     {id: 'media', label: 'Sent from Browser', icon: ICON.browser, gap: true},
 ];
 let view = VIEWS.find((v) => v.id === stored('view', 'all')) ?? VIEWS[0];
@@ -125,7 +127,9 @@ function statusOf(d: Status): {text: string, cls: string, title: string} {
     case 'downloading':
         if (d.parts) return {text: `Segment ${d.partsDone ?? 0} of ${d.parts}`, cls: '', title};
         return {text: f !== null ? percent(f) : `${size(d.done)} received`, cls: '', title};
-    case 'paused': return {text: f !== null ? `Paused at ${percent(f)}` : 'Paused', cls: '', title};
+    case 'paused':
+        if (d.queue) return {text: f ? `Queued, ${percent(f)} done` : 'Queued', cls: '', title};
+        return {text: f !== null ? `Paused at ${percent(f)}` : 'Paused', cls: '', title};
     case 'failed': return {text: `Error: ${d.error ?? 'failed'}`, cls: 'bad', title};
     case 'cancelled': return {text: d.error && d.error !== 'Cancelled.' ? d.error : 'Cancelled', cls: 'note', title};
     }
@@ -237,12 +241,15 @@ function startResize(e: MouseEvent, c: Col, i: number) {
 // --- The table ---
 
 let all: Status[] = [];
+let queue = {running: false, limit: 0}; // the queue and speed limiter
 let shown: Status[] = [];
 const rows = new Map<number, HTMLTableRowElement>();
 const selected = new Set<number>();
 let anchor: number | null = null;
 
 function sorted(list: Status[]) {
+    // The queue is shown in the order it runs.
+    if (view.id === 'queue') return [...list].sort((a, b) => (a.queue ?? 0) - (b.queue ?? 0));
     const col = COLS.find((c) => c.id === sort.col) ?? COLS[COLS.length - 1];
     const dir = sort.desc ? -1 : 1;
     return [...list].sort((a, b) => {
@@ -362,6 +369,19 @@ async function each(list: Status[], action: (id: number) => Promise<unknown>) {
 
 const resume = (list: Status[]) => each(list.filter((d) => d.resumable), ResumeDownload);
 const stop = (list: Status[]) => each(list.filter(isRunning), PauseDownload);
+const canQueue = (d: Status) => !d.queue && d.resumable;
+
+async function queueCall(f: () => Promise<unknown>) {
+    try {
+        await f();
+    } catch (err) {
+        notice(msg(err), 'bad');
+    }
+    await refreshDownloads();
+}
+const toQueue = (list: Status[]) => queueCall(() => AddToQueue(list.filter(canQueue).map((d) => d.id)));
+const offQueue = (list: Status[]) => queueCall(() => RemoveFromQueue(list.filter((d) => d.queue).map((d) => d.id)));
+const move = (d: Status, by: number) => queueCall(() => MoveInQueue(d.id, by));
 
 // openDownload opens a finished file, or the progress window of one that
 // isn't finished, as double-click does in IDM.
@@ -430,6 +450,8 @@ function updateToolbar() {
     $<HTMLButtonElement>('tb-stop-all').disabled = !all.some(isRunning);
     $<HTMLButtonElement>('tb-delete').disabled = !sel.length || sel.some(isRunning);
     $<HTMLButtonElement>('tb-delete-done').disabled = !all.some((d) => d.state === 'done');
+    $<HTMLButtonElement>('tb-queue-start').disabled = queue.running || !all.some((d) => d.queue);
+    $<HTMLButtonElement>('tb-queue-stop').disabled = !queue.running;
 }
 
 $('tb-add').addEventListener('click', openAdd);
@@ -438,6 +460,10 @@ $('tb-stop').addEventListener('click', () => stop(pick()));
 $('tb-stop-all').addEventListener('click', () => stop(all));
 $('tb-delete').addEventListener('click', () => remove(pick()));
 $('tb-delete-done').addEventListener('click', removeCompleted);
+$('tb-options').addEventListener('click', () => ShowOptions('general').catch((e) => notice(msg(e), 'bad')));
+$('tb-scheduler').addEventListener('click', () => ShowOptions('scheduler').catch((e) => notice(msg(e), 'bad')));
+$('tb-queue-start').addEventListener('click', () => queueCall(StartQueue));
+$('tb-queue-stop').addEventListener('click', () => queueCall(StopQueue));
 
 // --- Right-click menu ---
 
@@ -454,6 +480,11 @@ function openMenu(x: number, y: number) {
         null,
         ['Resume', sel.some((d) => d.resumable), () => resume(sel)],
         ['Stop', sel.some(isRunning), () => stop(sel)],
+        null,
+        ['Add to queue', sel.some(canQueue), () => toQueue(sel)],
+        ['Remove from queue', sel.some((d) => d.queue), () => offQueue(sel)],
+        ['Move up in queue', sel.length === 1 && !!sel[0].queue, () => move(sel[0], -1)],
+        ['Move down in queue', sel.length === 1 && !!sel[0].queue, () => move(sel[0], 1)],
         null,
         ['Delete…', !sel.some(isRunning), () => remove(sel)],
     ];
@@ -587,12 +618,15 @@ function showTotals() {
     const parts = [`${all.length} ${all.length === 1 ? 'download' : 'downloads'}`];
     if (running) parts.push(`${running} running`);
     if (speeds.size) parts.push(`${size(Math.round(total))}/s`);
+    if (queue.running) parts.push('queue running');
+    if (queue.limit) parts.push(`speed limit ${size(queue.limit)}/s`);
     $('totals').textContent = parts.join(' · ');
 }
 
 async function refreshDownloads() {
     try {
         all = (await Downloads()) ?? [];
+        queue = await QueueInfo();
     } catch {
         lost = true;
         if (engineOk) {

@@ -87,6 +87,11 @@ func (d *downloads) update(j *job, f func(*job)) {
 func (d *downloads) find(id uint64) *job {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	return d.findLocked(id)
+}
+
+// findLocked is find for a caller holding d.mu.
+func (d *downloads) findLocked(id uint64) *job {
 	for _, j := range d.jobs {
 		if j.ID == id {
 			return j
@@ -198,6 +203,7 @@ func (e *engine) launch(j *job, run func(context.Context, *job)) {
 	go func() {
 		defer cancel(nil)
 		run(ctx, j)
+		e.ranOut(j)
 		if e.finished != nil {
 			e.finished(j.ID)
 		}
@@ -266,7 +272,7 @@ func (e *engine) getResumable(ctx context.Context, j *job) (string, int64, error
 		}
 	}
 	if out == nil {
-		dir := e.dir
+		dir := e.saveDir()
 		if j.dir != "" {
 			dir = j.dir
 		}
@@ -301,7 +307,7 @@ func (e *engine) getResumable(ctx context.Context, j *job) (string, int64, error
 	fmt.Fprintf(e.log, "download %d (%s): %s, %s, %d streams, %d bytes, %d already in\n", j.ID, j.host, res.Protocol, res.Plan.Mode, res.Plan.Streams, res.Size, out.Written())
 
 	stop := e.checkpoints(j, out)
-	err = fetch.Download(ctx, *j.req, res, out, fetch.Options{RootCAs: e.probe.RootCAs, OnLimit: e.onLimit(j), Watch: watch})
+	err = fetch.Download(ctx, *j.req, res, out, fetch.Options{RootCAs: e.probe.RootCAs, OnLimit: e.onLimit(j), Watch: watch, Limit: e.limit})
 	stop()
 	if err == nil {
 		var path string
@@ -377,6 +383,9 @@ func (e *engine) stopped(ctx context.Context, j *job, err error) {
 		os.Remove(j.part)
 		j.part, j.have = "", nil
 	}
+	if !canResume {
+		j.Queue = 0
+	}
 	state := fetch.Failed
 	switch {
 	case byUser:
@@ -413,7 +422,7 @@ func (e *engine) done(j *job, path string, size int64) {
 	e.dl.update(j, func(j *job) {
 		j.State, j.Path, j.Name, j.Done, j.Error = fetch.Done, path, filepath.Base(path), size, ""
 		j.Size, j.PartsDone, j.progress = size, j.Parts, nil
-		j.part, j.have = "", nil
+		j.part, j.have, j.Queue = "", nil, 0
 	})
 	e.end(j)
 	if e.show != nil && e.setting(setDone) == "1" {
@@ -478,7 +487,7 @@ func (e *engine) getFile(ctx context.Context, j *job, r probe.Request, dir strin
 	}
 	started(res, out)
 	fmt.Fprintf(e.log, "download %d (%s): %s, %s, %d streams, %d bytes\n", j.ID, hostOf(r.URL), res.Protocol, res.Plan.Mode, res.Plan.Streams, res.Size)
-	err = fetch.Download(ctx, r, res, out, fetch.Options{RootCAs: e.probe.RootCAs, OnLimit: e.onLimit(j)})
+	err = fetch.Download(ctx, r, res, out, fetch.Options{RootCAs: e.probe.RootCAs, OnLimit: e.onLimit(j), Limit: e.limit})
 	var path string
 	if err == nil {
 		path, err = out.Finish()
@@ -516,7 +525,7 @@ func (e *engine) cancelDownload(id uint64) error {
 	if j.part != "" {
 		os.Remove(j.part)
 	}
-	j.part, j.have, j.Resumable = "", nil, false
+	j.part, j.have, j.Resumable, j.Queue = "", nil, false, 0
 	j.State, j.Error = fetch.Cancelled, "Cancelled."
 	e.dl.mu.Unlock()
 	fmt.Fprintf(e.log, "download %d (%s): unfinished file discarded\n", j.ID, j.host)
@@ -677,7 +686,7 @@ func (e *engine) restore(jr *journal.Journal) error {
 				if j.part != "" {
 					os.Remove(j.part)
 				}
-				j.part, j.have, j.Resumable, j.State, j.Streams = "", nil, false, fetch.Failed, 0
+				j.part, j.have, j.Resumable, j.State, j.Streams, j.Queue = "", nil, false, fetch.Failed, 0, 0
 				j.Error = "The app stopped during this download; send it from the browser again."
 				if !wasRunning {
 					j.Error = "The unfinished file is gone; send it from the browser again."
@@ -727,6 +736,7 @@ func isRunning(state string) bool {
 // save their progress, or clean up the files of those that can't resume.
 func (e *engine) stopAll(wait time.Duration) {
 	e.dl.mu.Lock()
+	e.q.running = false // start nothing new
 	for _, j := range e.dl.jobs {
 		if j.cancel != nil {
 			j.cancel(errShutdown)

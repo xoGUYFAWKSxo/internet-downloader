@@ -77,6 +77,7 @@ export namespace fetch {
 	    partsDone?: number;
 	    started: string;
 	    resumable?: boolean;
+	    queue?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Status(source);
@@ -98,6 +99,7 @@ export namespace fetch {
 	        this.partsDone = source["partsDone"];
 	        this.started = source["started"];
 	        this.resumable = source["resumable"];
+	        this.queue = source["queue"];
 	    }
 	}
 	export class Detail {
@@ -137,6 +139,20 @@ export namespace fetch {
 		    }
 		    return a;
 		}
+	}
+	export class QueueInfo {
+	    running: boolean;
+	    limit: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new QueueInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.running = source["running"];
+	        this.limit = source["limit"];
+	    }
 	}
 	
 

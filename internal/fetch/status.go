@@ -31,6 +31,9 @@ type Status struct {
 	Started   string `json:"started"`
 	// Resumable means the unfinished file is kept and Resume picks it up.
 	Resumable bool `json:"resumable,omitempty"`
+	// Queue is the download's place in the queue, lowest first; 0 when it
+	// isn't queued.
+	Queue int `json:"queue,omitempty"`
 }
 
 // Detail is what a download's progress window shows.
@@ -48,6 +51,12 @@ type Detail struct {
 type Span struct {
 	Start int64 `json:"start"`
 	End   int64 `json:"end"`
+}
+
+// QueueInfo is what the window shows of the queue and the speed limiter.
+type QueueInfo struct {
+	Running bool  `json:"running"`
+	Limit   int64 `json:"limit"` // bytes per second; 0 when there is no limit
 }
 
 // AskInfo is what the Download File Info box shows.

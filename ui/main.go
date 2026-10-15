@@ -20,8 +20,11 @@ import (
 var assets embed.FS
 
 func main() {
-	app := &App{progress: idArg(os.Args[1:], "--progress="), ask: idArg(os.Args[1:], "--ask=")}
+	app := &App{progress: idArg(os.Args[1:], "--progress="), ask: idArg(os.Args[1:], "--ask="), options: optionsArg(os.Args[1:])}
 	switch {
+	case app.options != "":
+		runSmall(app, "Options", optionsWidth, optionsHeight, "options")
+		return
 	case app.progress != 0:
 		runSmall(app, "Download progress", progressWidth, progressHeight, fmt.Sprintf("progress.%d", app.progress))
 		return
@@ -62,6 +65,20 @@ func idArg(args []string, prefix string) uint64 {
 		}
 	}
 	return 0
+}
+
+// optionsArg reads --options, which opens the Options window, or
+// --options=TAB, which opens it at one of its tabs. It gives "" without.
+func optionsArg(args []string) string {
+	for _, a := range args {
+		if a == "--options" {
+			return "general"
+		}
+		if v, ok := strings.CutPrefix(a, "--options="); ok && v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // runSmall shows a download's progress window or a link's Download File

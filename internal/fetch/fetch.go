@@ -53,6 +53,8 @@ type Options struct {
 	OnLimit func(streams int)
 	// Watch, if set, shows the download's connections while it runs.
 	Watch *Watch
+	// Limit, if set, caps the speed; downloads sharing it share the cap.
+	Limit *Limiter
 }
 
 // ErrChanged means the server's file is no longer the one the probe saw.
@@ -95,7 +97,7 @@ func Download(ctx context.Context, r probe.Request, res *probe.Result, out *outf
 	if res.Protocol == probe.HTTP3 {
 		target.Host = res.H3Addr
 	}
-	d := &download{gate: newGate(res.Plan.Streams), retryWait: o.RetryWait, onLimit: o.OnLimit, client: client, url: target.String(), req: r, res: res, out: out}
+	d := &download{gate: newGate(res.Plan.Streams), retryWait: o.RetryWait, onLimit: o.OnLimit, limit: o.Limit, client: client, url: target.String(), req: r, res: res, out: out}
 	if o.Watch != nil {
 		o.Watch.set(d)
 		defer o.Watch.set(nil)
@@ -135,6 +137,7 @@ type download struct {
 	gate      *gate
 	retryWait time.Duration
 	onLimit   func(int)
+	limit     *Limiter
 	client    *http.Client
 	url       string
 	req       probe.Request
@@ -432,10 +435,13 @@ func (d *download) fetchPiece(ctx context.Context, s *slot) error {
 	// back half; closing the body then stops the transfer.
 	buf := make([]byte, bufSize)
 	for {
-		n, rerr := io.ReadFull(resp.Body, buf)
+		n, rerr := io.ReadFull(resp.Body, buf[:d.limit.chunk(len(buf))])
 		if n > 0 {
 			off, k := d.claim(s, n)
 			if _, err := d.out.WriteAt(buf[:k], off); err != nil {
+				return err
+			}
+			if err := d.limit.wait(ctx, n); err != nil {
 				return err
 			}
 		}
@@ -480,7 +486,7 @@ func (d *download) whole(ctx context.Context) error {
 		return ErrChanged
 	}
 	d.setState(s, ConnReceiving)
-	err = d.copy(resp.Body, s, d.res.Size)
+	err = d.copy(ctx, resp.Body, s, d.res.Size)
 	if err == nil {
 		d.setState(s, ConnDone)
 	}
@@ -489,7 +495,7 @@ func (d *download) whole(ctx context.Context) error {
 
 // copy writes body into the file from the start of s's piece. n is the
 // number of bytes expected, or -1 to read to the end.
-func (d *download) copy(body io.Reader, s *slot, n int64) error {
+func (d *download) copy(ctx context.Context, body io.Reader, s *slot, n int64) error {
 	off := s.p.pos
 	if n >= 0 {
 		body = io.LimitReader(body, n)
@@ -497,7 +503,7 @@ func (d *download) copy(body io.Reader, s *slot, n int64) error {
 	buf := make([]byte, bufSize)
 	var got int64
 	for {
-		k, err := io.ReadFull(body, buf)
+		k, err := io.ReadFull(body, buf[:d.limit.chunk(len(buf))])
 		if k > 0 {
 			if _, werr := d.out.WriteAt(buf[:k], off+got); werr != nil {
 				return werr
@@ -506,6 +512,9 @@ func (d *download) copy(body io.Reader, s *slot, n int64) error {
 			d.mu.Lock()
 			s.p.pos, s.got = off+got, s.got+int64(k)
 			d.mu.Unlock()
+			if werr := d.limit.wait(ctx, k); werr != nil {
+				return werr
+			}
 		}
 		if err == io.EOF || err == io.ErrUnexpectedEOF {
 			break

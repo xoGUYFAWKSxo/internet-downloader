@@ -69,6 +69,8 @@ func main() {
 			fmt.Fprintln(os.Stderr, "engine: couldn't load the saved download list:", err)
 		}
 	}
+	e.applyLimit()
+	go e.runScheduler()
 	served := make(chan error, 1)
 	go func() { served <- ipc.Serve(l, e.handle) }()
 	runTray(e, l, served)

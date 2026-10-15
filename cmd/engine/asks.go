@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -42,12 +43,22 @@ const (
 
 // Settings and their defaults.
 const (
-	setAsk  = "ask"  // "1": show the Download File Info box for links from the browser
-	setDone = "done" // "1": show a box when a download finishes
-	setDir  = "dir"  // the folder last saved into
+	setAsk        = "ask"        // "1": show the Download File Info box for links from the browser
+	setDone       = "done"       // "1": show a box when a download finishes
+	setDir        = "dir"        // the folder last saved into
+	setLimit      = "limit"      // "1": the speed limiter is on
+	setLimitKB    = "limitKB"    // its cap, in KB/s
+	setQueueMax   = "queueMax"   // how many queued downloads run at once
+	setSched      = "sched"      // "1": the scheduler starts the queue
+	setSchedStart = "schedStart" // at this time, "15:04"
+	setSchedStop  = "schedStop"  // and stops it at this one, or ""
+	setSchedDays  = "schedDays"  // on these days: digits, 0 for Sunday
 )
 
-var settingDefaults = map[string]string{setAsk: "1", setDone: "1"}
+var settingDefaults = map[string]string{
+	setAsk: "1", setDone: "1", setLimit: "0", setLimitKB: "1024", setQueueMax: "2",
+	setSched: "0", setSchedStart: "02:00", setSchedStop: "", setSchedDays: "0123456",
+}
 
 func (e *engine) setting(key string) string {
 	def := settingDefaults[key]
@@ -63,29 +74,93 @@ func (e *engine) setting(key string) string {
 }
 
 func (e *engine) setSetting(key, value string) error {
+	return e.setSettings(map[string]string{key: value})
+}
+
+// setSettings checks every value before saving any, so the Options window
+// saves all or nothing.
+func (e *engine) setSettings(m map[string]string) error {
+	for k, v := range m {
+		if err := checkSetting(k, v); err != nil {
+			return err
+		}
+	}
+	for k, v := range m {
+		if e.jr != nil {
+			if err := e.jr.SetSetting(k, v); err != nil {
+				return err
+			}
+			continue
+		}
+		e.asks.mu.Lock()
+		if e.memSettings == nil {
+			e.memSettings = map[string]string{}
+		}
+		e.memSettings[k] = v
+		e.asks.mu.Unlock()
+	}
+	e.applyLimit()
+	e.pumpQueue() // the number at once may have gone up
+	return nil
+}
+
+func checkSetting(key, value string) error {
 	switch key {
-	case setAsk, setDone:
+	case setAsk, setDone, setLimit, setSched:
 		if value != "0" && value != "1" {
 			return errors.New("invalid setting value")
 		}
 	case setDir:
+		if value != "" && !filepath.IsAbs(value) {
+			return errors.New("Choose a folder to save into.")
+		}
+	case setLimitKB:
+		if n, err := strconv.Atoi(value); err != nil || n < 1 || n > 1000000 {
+			return errors.New("The speed limit should be a whole number of KB/s, from 1 to 1000000.")
+		}
+	case setQueueMax:
+		if n, err := strconv.Atoi(value); err != nil || n < 1 || n > 10 {
+			return errors.New("The queue can run from 1 to 10 downloads at once.")
+		}
+	case setSchedStart, setSchedStop:
+		if value == "" && key == setSchedStop {
+			return nil
+		}
+		if _, err := time.Parse("15:04", value); err != nil {
+			return errors.New("Times should look like 23:30.")
+		}
+	case setSchedDays:
+		for _, c := range value {
+			if c < '0' || c > '6' {
+				return errors.New("invalid days")
+			}
+		}
 	default:
 		return fmt.Errorf("unknown setting %q", key)
 	}
-	if e.jr != nil {
-		return e.jr.SetSetting(key, value)
-	}
-	e.asks.mu.Lock()
-	defer e.asks.mu.Unlock()
-	if e.memSettings == nil {
-		e.memSettings = map[string]string{}
-	}
-	e.memSettings[key] = value
 	return nil
 }
 
 func (e *engine) settings() map[string]string {
-	return map[string]string{setAsk: e.setting(setAsk), setDone: e.setting(setDone), setDir: e.saveDir()}
+	m := map[string]string{}
+	for k := range settingDefaults {
+		m[k] = e.setting(k)
+	}
+	m[setDir] = e.saveDir()
+	return m
+}
+
+// applyLimit sets the speed limiter from the settings.
+func (e *engine) applyLimit() {
+	var bps int64
+	if e.setting(setLimit) == "1" {
+		kb, _ := strconv.Atoi(e.setting(setLimitKB))
+		bps = int64(kb) << 10
+	}
+	if bps != e.limit.Rate() {
+		e.limit.SetRate(bps)
+		fmt.Fprintf(e.log, "engine: speed limit %d B/s (0: none)\n", bps)
+	}
 }
 
 // saveDir is the folder the box offers: the one last used, while it is
@@ -208,9 +283,11 @@ func (e *engine) answerAsk(id uint64, dir, name string, later bool) (uint64, err
 	j := e.newJob(r.URL, &r, func(j *job) {
 		set(j)
 		j.State, j.Resumable, j.Size = fetch.Paused, true, a.info.Size
-		j.Error = "Not started yet. Resume starts it."
+		j.Error = "Not started yet. Resume, or the queue, starts it."
+		j.Queue = e.lastInQueue() + 1
 	})
-	fmt.Fprintf(e.log, "download %d (%s): added to start later\n", j.ID, j.host)
+	fmt.Fprintf(e.log, "download %d (%s): added to the queue\n", j.ID, j.host)
+	e.pumpQueue()
 	return j.ID, nil
 }
 
