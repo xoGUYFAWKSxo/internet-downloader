@@ -1,0 +1,233 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/xoGUYFAWKSxo/internet-downloader/internal/fetch"
+	"github.com/xoGUYFAWKSxo/internet-downloader/internal/media"
+	"github.com/xoGUYFAWKSxo/internet-downloader/internal/outfile"
+	"github.com/xoGUYFAWKSxo/internet-downloader/internal/probe"
+)
+
+// An ask is a link waiting in the Download File Info box. Its server is
+// checked while the box is open; nothing is downloaded until the user
+// chooses Start Download or Download Later.
+type ask struct {
+	made   time.Time
+	media  media.Context // cookies and headers stay here, in memory
+	stream bool
+	info   AskInfo
+}
+
+type AskInfo = fetch.AskInfo
+
+type asks struct {
+	mu   sync.Mutex
+	next uint64
+	m    map[uint64]*ask
+}
+
+const (
+	askFor  = time.Hour // an unanswered box is forgotten after this
+	maxAsks = 20
+)
+
+// Settings and their defaults.
+const (
+	setAsk  = "ask"  // "1": show the Download File Info box for links from the browser
+	setDone = "done" // "1": show a box when a download finishes
+	setDir  = "dir"  // the folder last saved into
+)
+
+var settingDefaults = map[string]string{setAsk: "1", setDone: "1"}
+
+func (e *engine) setting(key string) string {
+	def := settingDefaults[key]
+	if e.jr != nil {
+		return e.jr.Setting(key, def)
+	}
+	e.asks.mu.Lock()
+	defer e.asks.mu.Unlock()
+	if v, ok := e.memSettings[key]; ok {
+		return v
+	}
+	return def
+}
+
+func (e *engine) setSetting(key, value string) error {
+	switch key {
+	case setAsk, setDone:
+		if value != "0" && value != "1" {
+			return errors.New("invalid setting value")
+		}
+	case setDir:
+	default:
+		return fmt.Errorf("unknown setting %q", key)
+	}
+	if e.jr != nil {
+		return e.jr.SetSetting(key, value)
+	}
+	e.asks.mu.Lock()
+	defer e.asks.mu.Unlock()
+	if e.memSettings == nil {
+		e.memSettings = map[string]string{}
+	}
+	e.memSettings[key] = value
+	return nil
+}
+
+func (e *engine) settings() map[string]string {
+	return map[string]string{setAsk: e.setting(setAsk), setDone: e.setting(setDone), setDir: e.saveDir()}
+}
+
+// saveDir is the folder the box offers: the one last used, while it is
+// still there, else Downloads.
+func (e *engine) saveDir() string {
+	if d := e.setting(setDir); d != "" {
+		if fi, err := os.Stat(d); err == nil && fi.IsDir() {
+			return d
+		}
+	}
+	return e.dir
+}
+
+// newAsk keeps c for the box and checks its server in the background.
+func (e *engine) newAsk(c media.Context) uint64 {
+	stream := c.Kind == media.KindHLS || c.Kind == media.KindDASH
+	a := &ask{made: e.now(), media: c, stream: stream,
+		info: AskInfo{Host: hostOf(c.URL), Size: -1, Stream: stream, Dir: e.saveDir()}}
+	if stream {
+		a.info.Name, a.info.Resume = streamName(c), "no"
+	} else {
+		a.info.Name, a.info.Checking = fileNameOf(c.URL), true
+	}
+	e.asks.mu.Lock()
+	if e.asks.m == nil {
+		e.asks.m = map[uint64]*ask{}
+	}
+	var oldest uint64
+	for id, o := range e.asks.m {
+		if e.now().Sub(o.made) > askFor {
+			delete(e.asks.m, id)
+		} else if oldest == 0 || id < oldest {
+			oldest = id
+		}
+	}
+	if len(e.asks.m) >= maxAsks {
+		delete(e.asks.m, oldest)
+	}
+	e.asks.next++
+	id := e.asks.next
+	a.info.ID = id
+	e.asks.m[id] = a
+	e.asks.mu.Unlock()
+	if !stream {
+		go e.checkAsk(a, request(c))
+	}
+	return id
+}
+
+func (e *engine) checkAsk(a *ask, r probe.Request) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	res, name, err := e.probeFile(ctx, r)
+	e.asks.mu.Lock()
+	defer e.asks.mu.Unlock()
+	a.info.Checking = false
+	if err != nil {
+		fmt.Fprintf(e.log, "ask %d (%s): %v\n", a.info.ID, a.info.Host, err)
+		a.info.Error = sentence(err)
+		return
+	}
+	a.info.Name, a.info.Size, a.info.Resume = name, res.Size, "no"
+	if fetch.Validator(res) != "" && res.Size > 0 && res.Plan.Mode != probe.Single {
+		a.info.Resume = "yes"
+	}
+}
+
+func (e *engine) askInfo(id uint64) (AskInfo, error) {
+	e.asks.mu.Lock()
+	defer e.asks.mu.Unlock()
+	a, ok := e.asks.m[id]
+	if !ok {
+		return AskInfo{}, errors.New("That link is no longer waiting; send it from the browser again.")
+	}
+	return a.info, nil
+}
+
+func (e *engine) dropAsk(id uint64) {
+	e.asks.mu.Lock()
+	delete(e.asks.m, id)
+	e.asks.mu.Unlock()
+}
+
+// answerAsk downloads an ask's link into dir under name, or with later adds
+// it to the list paused, to start with Resume.
+func (e *engine) answerAsk(id uint64, dir, name string, later bool) (uint64, error) {
+	dir = filepath.Clean(strings.TrimSpace(dir))
+	if !filepath.IsAbs(dir) {
+		return 0, errors.New("Choose a folder to save into.")
+	}
+	if strings.TrimSpace(name) == "" {
+		return 0, errors.New("Type a name for the file.")
+	}
+	name = outfile.CleanName(name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return 0, fmt.Errorf("Couldn't use that folder: %s.", strings.TrimRight(err.Error(), ". "))
+	}
+	e.asks.mu.Lock()
+	a, ok := e.asks.m[id]
+	delete(e.asks.m, id)
+	e.asks.mu.Unlock()
+	if !ok {
+		return 0, errors.New("That link is no longer waiting; send it from the browser again.")
+	}
+	if a.stream && later {
+		return 0, errors.New("A stream can't wait in the list, as it can't be resumed; start it now.")
+	}
+	if err := e.setSetting(setDir, dir); err != nil {
+		fmt.Fprintf(e.log, "couldn't save the folder: %v\n", err)
+	}
+	set := func(j *job) { j.dir, j.name, j.Name = dir, name, name }
+	if a.stream {
+		c := a.media
+		return e.startJob(c.URL, nil, set, func(ctx context.Context, j *job) { e.runStreamJob(ctx, j, c) }), nil
+	}
+	r := request(a.media)
+	if !later {
+		return e.startJob(r.URL, &r, set, e.runFile), nil
+	}
+	j := e.newJob(r.URL, &r, func(j *job) {
+		set(j)
+		j.State, j.Resumable, j.Size = fetch.Paused, true, a.info.Size
+		j.Error = "Not started yet. Resume starts it."
+	})
+	fmt.Fprintf(e.log, "download %d (%s): added to start later\n", j.ID, j.host)
+	return j.ID, nil
+}
+
+func request(c media.Context) probe.Request {
+	return probe.Request{URL: c.URL, Referer: c.Referer, Headers: c.Headers, Cookies: c.Cookies}
+}
+
+// fileNameOf guesses a file name from an address until the server says.
+func fileNameOf(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	if b := filepath.Base(u.Path); b != "." && b != "/" && b != `\` {
+		if n, err := url.PathUnescape(b); err == nil {
+			return outfile.CleanName(n)
+		}
+	}
+	return u.Host
+}

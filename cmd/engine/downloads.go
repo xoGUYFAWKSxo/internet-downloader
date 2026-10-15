@@ -52,6 +52,9 @@ type job struct {
 	size      int64
 	validator string
 	have      []outfile.Range
+	// dir and name are where the user chose to save the file; "" for
+	// Downloads and the server's name. Set before the job first runs.
+	dir, name string
 }
 
 type downloads struct {
@@ -156,18 +159,37 @@ func (e *engine) startDownload(id uint64) (uint64, error) {
 // start adds a job for address u and runs it in the background; it returns
 // the job's id at once. req is kept to resume the job, or nil.
 func (e *engine) start(u string, req *probe.Request, run func(context.Context, *job)) uint64 {
+	return e.startJob(u, req, nil, run)
+}
+
+// startJob is start with set, if not nil, changing the job first.
+func (e *engine) startJob(u string, req *probe.Request, set func(*job), run func(context.Context, *job)) uint64 {
+	j := e.newJob(u, req, set)
+	e.launch(j, run)
+	return j.ID
+}
+
+// newJob adds a job to the list and the saved list without running it.
+func (e *engine) newJob(u string, req *probe.Request, set func(*job)) *job {
 	e.dl.mu.Lock()
 	e.dl.next++
 	j := &job{Status: fetch.Status{ID: e.dl.next, Name: hostOf(u), Size: -1, State: fetch.Checking, Started: e.now().Format(time.RFC3339)}, host: hostOf(u), req: req}
+	if set != nil {
+		set(j)
+	}
 	e.dl.jobs = append(e.dl.jobs, j)
+	s := j.Status
 	e.dl.mu.Unlock()
 	if e.jr != nil {
-		if err := e.jr.Add(j.Status, req); err != nil {
+		err := e.jr.Add(s, req)
+		if err == nil && (j.dir != "" || j.name != "") {
+			err = e.jr.SetTarget(j.ID, j.dir, j.name)
+		}
+		if err != nil {
 			fmt.Fprintf(e.log, "download %d (%s): couldn't save it to the list: %v\n", j.ID, j.host, err)
 		}
 	}
-	e.launch(j, run)
-	return j.ID
+	return j
 }
 
 func (e *engine) launch(j *job, run func(context.Context, *job)) {
@@ -244,7 +266,14 @@ func (e *engine) getResumable(ctx context.Context, j *job) (string, int64, error
 		}
 	}
 	if out == nil {
-		if out, err = outfile.Create(e.dir, name, res.Size); err != nil {
+		dir := e.dir
+		if j.dir != "" {
+			dir = j.dir
+		}
+		if j.name != "" {
+			name = j.name
+		}
+		if out, err = outfile.Create(dir, name, res.Size); err != nil {
 			return "", 0, err
 		}
 		if !resumable {
@@ -387,6 +416,11 @@ func (e *engine) done(j *job, path string, size int64) {
 		j.part, j.have = "", nil
 	})
 	e.end(j)
+	if e.show != nil && e.setting(setDone) == "1" {
+		if err := e.show(fmt.Sprintf("--progress=%d", j.ID)); err != nil {
+			fmt.Fprintf(e.log, "download %d: couldn't show that it finished: %v\n", j.ID, err)
+		}
+	}
 }
 
 // save writes j's status to the saved list.
@@ -565,11 +599,19 @@ func (e *engine) removeDownloads(ids []uint64, deleteFiles bool) error {
 
 // addURL downloads an address typed or pasted into the window.
 func (e *engine) addURL(raw string) (uint64, error) {
+	u, err := webAddress(raw)
+	if err != nil {
+		return 0, err
+	}
+	return e.download(probe.Request{URL: u}), nil
+}
+
+func webAddress(raw string) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return 0, errors.New("That isn't a web address. It should start with http:// or https://.")
+		return "", errors.New("That isn't a web address. It should start with http:// or https://.")
 	}
-	return e.download(probe.Request{URL: u.String()}), nil
+	return u.String(), nil
 }
 
 // resumeDownload carries on with a paused or failed download.
@@ -610,7 +652,7 @@ func (e *engine) restore(jr *journal.Journal) error {
 		}
 	}
 	for _, r := range recs {
-		j := &job{Status: r.Status, req: r.Request, part: r.Part, size: r.Size, validator: r.Validator, have: r.Have, cancel: func(error) {}}
+		j := &job{Status: r.Status, req: r.Request, part: r.Part, size: r.Size, validator: r.Validator, have: r.Have, dir: r.Dir, name: r.Name, cancel: func(error) {}}
 		if r.Request != nil {
 			j.host = hostOf(r.Request.URL)
 		}
@@ -620,7 +662,9 @@ func (e *engine) restore(jr *journal.Journal) error {
 			wasRunning = true
 		}
 		if wasRunning || j.Resumable {
-			ok := j.req != nil && j.part != "" && j.validator != "" && fileExists(j.part)
+			// With no file yet (added to start later, or stopped before
+			// the server answered), there is nothing to lose by starting.
+			ok := j.req != nil && (j.part == "" || j.validator != "" && fileExists(j.part))
 			switch {
 			case ok:
 				j.State, j.Resumable = fetch.Paused, true

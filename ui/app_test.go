@@ -62,10 +62,13 @@ func TestDecode(t *testing.T) {
 	}
 }
 
-func TestProgressArg(t *testing.T) {
-	for args, want := range map[string]uint64{"": 0, "--progress=12": 12, "-x --progress=7": 7, "--progress=x": 0, "--progress": 0} {
-		if got := progressArg(strings.Fields(args)); got != want {
+func TestIDArg(t *testing.T) {
+	for args, want := range map[string]uint64{"": 0, "--progress=12": 12, "-x --progress=7": 7, "--progress=x": 0, "--progress": 0, "--ask=3": 0} {
+		if got := idArg(strings.Fields(args), "--progress="); got != want {
 			t.Errorf("%q: got %d, want %d", args, got, want)
 		}
+	}
+	if got := idArg([]string{"--ask=3"}, "--ask="); got != 3 {
+		t.Errorf("--ask=3: got %d", got)
 	}
 }

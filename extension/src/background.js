@@ -302,7 +302,8 @@ async function menuClicked(info, tab) {
     return;
   }
   const r = await sendItem(tab.id, item, "download");
-  if (r?.ok) notify("Downloading", (choice.title ?? "Video") + ". Progress shows in the Internet Downloader window.");
+  // The app may show its Download File Info box instead of starting at once.
+  if (r?.ok) { if (!r.payload?.asked) notify("Downloading", (choice.title ?? "Video") + ". Progress shows in the Internet Downloader window."); }
   else notify("Couldn't download", r?.error ?? "No answer from the app.");
 }
 menus?.onClicked.addListener((info, tab) => { menuClicked(info, tab); });

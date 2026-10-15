@@ -531,8 +531,11 @@ $('add-form').addEventListener('submit', async (e) => {
     const ok = $<HTMLButtonElement>('add-ok');
     ok.disabled = true;
     try {
-        const id = await AddURL(addInput.value);
+        const added = await AddURL(addInput.value);
         addDialog.close();
+        // The Download File Info box takes it from here.
+        if (added.asked) return;
+        const id = added.id;
         if (view.id !== 'all' && view.id !== 'unfinished') setView(VIEWS[0]);
         selected.clear();
         selected.add(id);

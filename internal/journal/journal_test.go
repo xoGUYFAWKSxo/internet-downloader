@@ -1,6 +1,7 @@
 package journal
 
 import (
+	"database/sql"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -85,3 +86,45 @@ func TestTrim(t *testing.T) {
 }
 
 func mkdir(p string) error { return os.MkdirAll(p, 0o755) }
+
+// A list saved before downloads had a chosen folder and name opens, gains
+// the columns, and keeps them and the settings across opening again.
+func TestTargetAndSettings(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "downloads.db")
+	old, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := old.Exec(`CREATE TABLE downloads (id INTEGER PRIMARY KEY, status TEXT NOT NULL, request TEXT NOT NULL DEFAULT '',
+		part TEXT NOT NULL DEFAULT '', size INTEGER NOT NULL DEFAULT -1, validator TEXT NOT NULL DEFAULT '');
+		INSERT INTO downloads (id, status) VALUES (1, '{"name":"old.bin","state":"done"}')`); err != nil {
+		t.Fatal(err)
+	}
+	old.Close()
+	for i := 0; i < 2; i++ {
+		j, err := Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i == 0 {
+			if got := j.Setting("ask", "1"); got != "1" {
+				t.Fatalf("unset setting = %q", got)
+			}
+			j.Add(fetch.Status{ID: 2, Name: "b.bin", State: fetch.Paused}, &probe.Request{URL: "https://example.test/b.bin"})
+			if err := j.SetTarget(2, `D:\Films`, "b.bin"); err != nil {
+				t.Fatal(err)
+			}
+			j.SetSetting("ask", "0")
+			j.SetSetting("ask", "1")
+			j.SetSetting("ask", "0")
+		}
+		recs, err := j.Load()
+		if err != nil || len(recs) != 2 || recs[0].Status.Name != "old.bin" || recs[0].Dir != "" || recs[1].Dir != `D:\Films` || recs[1].Name != "b.bin" {
+			t.Fatalf("open %d: %v %+v", i, err, recs)
+		}
+		if got := j.Setting("ask", "1"); got != "0" {
+			t.Fatalf("open %d: setting = %q", i, got)
+		}
+		j.Close()
+	}
+}

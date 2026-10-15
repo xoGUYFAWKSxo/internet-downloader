@@ -49,9 +49,10 @@ globalThis.chrome = {
   runtime: {
     onMessage: event(), onInstalled: event(), onStartup: event(),
     getURL: (p) => "chrome-extension://x/" + p,
-    sendNativeMessage: async (_host, msg) => { sent.push(msg); return { ok: true, payload: { id: 1 } }; },
+    sendNativeMessage: async (_host, msg) => { sent.push(msg); return reply; },
   },
 };
+let reply = { ok: true, payload: { id: 1 } };
 globalThis.fetch = async () => ({ ok: true, status: 200, text: async () => "#EXTM3U\n" });
 
 await import("./src/background.js");
@@ -133,6 +134,13 @@ test("right-click menu downloads the clicked or playing video", async () => {
   await click("download-media", "https://other.example/clip.mp4");
   m = sent.at(-1);
   assert.deepEqual([m.type, m.media.url, m.media.kind, m.media.referer], ["download", "https://other.example/clip.mp4", "video", "https://site.example/watch"]);
+
+  // The app showed its Download File Info box: no "Downloading" notice.
+  const notesBefore = notes.length;
+  reply = { ok: true, payload: { asked: true } };
+  await click("download-media", "https://other.example/clip.mp4");
+  reply = { ok: true, payload: { id: 1 } };
+  assert.equal(notes.length, notesBefore);
 
   // Two streams loading at once: ask instead of guessing.
   request("21", "https://cdn.example/w/other.m3u8", [], [{ name: "Content-Type", value: "application/vnd.apple.mpegurl" }]);

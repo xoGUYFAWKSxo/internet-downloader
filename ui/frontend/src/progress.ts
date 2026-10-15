@@ -1,6 +1,6 @@
 // The progress window of one download, like IDM's: what it is doing, and in
 // the details, a map of the file and what each connection is doing.
-import {DownloadDetail, OpenFile, PauseDownload, ResumeDownload, ShowDetails, ShowInFolder} from '../wailsjs/go/main/App';
+import {DownloadDetail, OpenFile, PauseDownload, ResumeDownload, SetSetting, Settings, ShowDetails, ShowInFolder} from '../wailsjs/go/main/App';
 import {Quit, WindowSetTitle} from '../wailsjs/runtime/runtime';
 import {$, duration, el, msg, percent, size} from './util';
 
@@ -20,6 +20,7 @@ const PAGE = `
         <tr><th>Server</th><td id="pw-server"></td></tr>
     </table>
     <div class="pw-bar"><div id="pw-fill"></div></div>
+    <label class="check" id="pw-quiet-row" hidden><input type="checkbox" id="pw-quiet"> Don't show this box when a download finishes</label>
     <div class="pw-buttons">
         <button id="pw-details"></button>
         <span class="spacer"></span>
@@ -112,6 +113,9 @@ export function start(id: number) {
     });
     $('pw-open').addEventListener('click', () => last?.status.path && act(() => OpenFile(last!.status.path!)));
     $('pw-folder').addEventListener('click', () => last?.status.path && act(() => ShowInFolder(last!.status.path!)));
+    const quiet = $<HTMLInputElement>('pw-quiet');
+    Settings().then((s) => { quiet.checked = s.done === '0'; }).catch(() => {});
+    quiet.addEventListener('change', () => SetSetting('done', quiet.checked ? '0' : '1').catch((err) => { $('pw-status').textContent = msg(err); }));
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') Quit(); });
     document.addEventListener('contextmenu', (e) => e.preventDefault());
 
@@ -135,7 +139,7 @@ export function start(id: number) {
         measure(s);
         const f = fraction(s);
         const running = RUNNING.has(s.state);
-        WindowSetTitle(f !== null && s.state !== 'done' ? `${percent(f)} ${s.name}` : s.name);
+        WindowSetTitle(s.state === 'done' ? 'Download complete' : f !== null ? `${percent(f)} ${s.name}` : s.name);
         $('pw-name').textContent = s.state === 'done' && s.path ? s.path : s.name;
         const st = $('pw-status');
         st.textContent = stateText(s);
@@ -154,6 +158,7 @@ export function start(id: number) {
 
         const done = s.state === 'done';
         $('pw-open').hidden = !done;
+        $('pw-quiet-row').hidden = !done;
         $('pw-folder').hidden = !done;
         const pause = $<HTMLButtonElement>('pw-pause');
         pause.hidden = done;
