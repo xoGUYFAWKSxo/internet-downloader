@@ -13,7 +13,7 @@ Desktop download manager for Windows: a background download engine, a desktop UI
 - Default max physical TCP connections per download (HTTP/1.1 fallback): 4.
 - One pre-allocated output file per download. Never write multiple part-files.
 
-## Layout (planned; built so far: `cmd/engine`, `cmd/nmhost`, `internal/ipc`, `internal/media`, `internal/nativemsg`, `internal/probe`, `internal/fetch`, `internal/outfile`, `internal/stream`, `internal/testserver`, `internal/launch`, `internal/journal`, `extension/`, `installer/install.ps1`, `installer/register-native-host.ps1`, `ui/`)
+## Layout (planned; built so far: `cmd/engine`, `cmd/nmhost`, `internal/ipc`, `internal/media`, `internal/nativemsg`, `internal/probe`, `internal/fetch`, `internal/outfile`, `internal/stream`, `internal/testserver`, `internal/launch`, `internal/journal`, `extension/`, `installer/install.ps1`, `installer/register-native-host.ps1`, `installer/build-release.ps1`, `installer/setup.iss`, `ui/`)
 Windows 10/11 x64, runs as the normal user, never elevated. The root Go module holds the engine, relay and `internal/`. `ui/` is a nested module (Wails needs its own `go.mod`) that uses the root module through a `replace ../` line:
 - `cmd/engine/`: `engine.exe`. Started on demand by the window or the relay (`internal/launch`, from the same folder), keeps running after they exit, owns the tray icon (Quit stops it), does all downloads, and is the only process that writes files or the database.
 - `cmd/nmhost/`: `nmhost.exe`. Native Messaging relay: browser JSON in, then out over the pipe to the engine. No download logic.
@@ -21,7 +21,7 @@ Windows 10/11 x64, runs as the normal user, never elevated. The root Go module h
 - `internal/`: engine packages (probe, fetch, outfile, stream, media, journal, ipc, launch). The saved download list and range log: `%LOCALAPPDATA%\InternetDownloader\downloads.db`.
 - `extension/`: MV3 extension for Chrome, Firefox and Edge. Firefox MV3 needs `background.scripts` (not `service_worker`) and `browser_specific_settings.gecko.id`.
 - FFmpeg (for joining stream tracks) is looked up next to `engine.exe`, then on PATH; tests use a stand-in.
-- `installer/`: installer, Native Messaging registration (`installer/register-native-host.ps1`: HKCU, Chrome, Edge and Firefox), bundled `ffmpeg.exe`.
+- `installer/`: the release build (`build-release.ps1` stages everything, with a pinned, checksummed FFmpeg, then `setup.iss` makes the Inno Setup installer), the development install (`install.ps1`) and Native Messaging registration (`register-native-host.ps1`: HKCU, Chrome, Edge and Firefox).
 - IPC: JSON over the named pipe `\\.\pipe\InternetDownloader-<user SID>`. Only the current user can open it.
 Update this section when the real layout exists.
 
@@ -40,8 +40,9 @@ cd ui; wails build -clean; go test ./...   # window -> ui/build/bin/ui.exe
 wails dev -browser=false        # in ui/: the window at http://localhost:34115 with live Go calls, handy for checking the UI
 powershell -File installer/register-native-host.ps1   # register the relay (bin/nmhost.exe) for Chrome, Edge, Firefox
 powershell -File installer/install.ps1   # build, install to %LOCALAPPDATA%\Programs\Internet Downloader, shortcuts, relay from there
+powershell -File installer/build-release.ps1 -Version 0.1.0   # release into dist/release: setup.exe, extension zips, SHA256SUMS (needs Inno Setup 6)
 ```
-- `go vet` must be clean. CI runs the `build-and-test` check (`.github/workflows/build.yml`) on every PR.
+- `go vet` must be clean. CI runs the `build-and-test` check (`.github/workflows/build.yml`) on every PR. The `release` workflow builds the installer on PRs that touch the release build, and on a `v*` tag into a draft release; publishing a release is the user's call.
 - Network tests use `internal/testserver` (local HTTP/1.1 with and without ranges, HTTP/2, HTTP/3). Never hit the real internet in tests.
 
 ## Workflow

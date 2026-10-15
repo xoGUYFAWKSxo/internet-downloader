@@ -72,5 +72,9 @@ Filename: "{app}\ui.exe"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: n
 ; Stops the engine and windows started from this folder, and nothing else.
 Filename: "powershell.exe"; Parameters: "-NoProfile -NonInteractive -Command ""Get-Process engine, ui -ErrorAction SilentlyContinue | Where-Object {{ $_.Path -and (Split-Path $_.Path) -eq '{app}' } | Stop-Process -Force; Start-Sleep -Milliseconds 500"""; Flags: runhidden; RunOnceId: "StopEngine"
 
+[UninstallDelete]
+; Also when install.ps1 made the folder, so Inno Setup didn't.
+Type: dirifempty; Name: "{app}"
+
 ; The download list and settings in %LOCALAPPDATA%\InternetDownloader, and
 ; the downloads themselves, are kept.
