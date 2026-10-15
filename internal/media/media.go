@@ -50,7 +50,7 @@ type Context struct {
 }
 
 // ErrDRM is returned for copy-protected streams, which this app never downloads.
-var ErrDRM = errors.New("this stream is copy-protected (DRM), so Internet Downloader can't download it")
+var ErrDRM = errors.New("this stream is copy-protected (DRM), so Galactic Downloader can't download it")
 
 // Validate checks the context is usable. The messages are shown to the user.
 func (c *Context) Validate() error {

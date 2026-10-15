@@ -49,5 +49,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --draft --title "Internet Downloader $VERSION" --generate-notes \
+          gh release create "$GITHUB_REF_NAME" --draft --title "Galactic Downloader $VERSION" --generate-notes \
             dist/release/*.exe dist/release/*.zip dist/release/SHA256SUMS.txt

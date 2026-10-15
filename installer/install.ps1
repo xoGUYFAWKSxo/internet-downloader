@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
-Builds Internet Downloader and installs it for the current user: the programs
-go to %LOCALAPPDATA%\Programs\Internet Downloader, with Start Menu and desktop
+Builds Galactic Downloader and installs it for the current user: the programs
+go to %LOCALAPPDATA%\Programs\Galactic Downloader, with Start Menu and desktop
 shortcuts, and the browser relay is registered from there. No admin rights
 needed. Opening the app (or downloading from the browser) starts the engine.
 
@@ -11,7 +11,12 @@ needed. Opening the app (or downloading from the browser) starts the engine.
 .\install.ps1 -Uninstall
 #>
 param(
-    [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'Programs\Internet Downloader'),
+    # An install from before the rename to Galactic Downloader stays where it is,
+    # as the installer does.
+    [string]$InstallDir = $(
+        $old = Join-Path $env:LOCALAPPDATA 'Programs\Internet Downloader'
+        if (Test-Path (Join-Path $old 'engine.exe')) { $old } else { Join-Path $env:LOCALAPPDATA 'Programs\Galactic Downloader' }
+    ),
     [switch]$NoBuild,
     [switch]$NoDesktopShortcut,
     [switch]$Uninstall
@@ -21,11 +26,17 @@ $ErrorActionPreference = 'Stop'
 # The saved PATH, so tools installed since this shell opened (Go, FFmpeg) are found.
 $env:PATH = @($env:PATH, [Environment]::GetEnvironmentVariable('Path', 'User'), [Environment]::GetEnvironmentVariable('Path', 'Machine')) -join ';'
 $Root = Split-Path $PSScriptRoot
-$Name = 'Internet Downloader'
+$Name = 'Galactic Downloader'
 $Shortcuts = @(
     (Join-Path ([Environment]::GetFolderPath('Programs')) "$Name.lnk"),
     (Join-Path ([Environment]::GetFolderPath('Desktop')) "$Name.lnk")
 )
+# Shortcuts made before the rename, removed on install and uninstall.
+$OldShortcuts = @(
+    (Join-Path ([Environment]::GetFolderPath('Programs')) 'Internet Downloader.lnk'),
+    (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Internet Downloader.lnk')
+)
+foreach ($s in $OldShortcuts) { if (Test-Path $s) { Remove-Item $s } }
 
 # Stops engines started from the install folder or the repo's bin, so their
 # files can be replaced. Downloads in progress stop with them.

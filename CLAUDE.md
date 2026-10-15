@@ -1,4 +1,4 @@
-# Internet Downloader (working name)
+# Galactic Downloader (working name)
 
 Desktop download manager for Windows: a background download engine, a desktop UI, and a browser extension that finds media streams (HLS/DASH) and hands them to the app. The project is new (started 2026-10-12). Read `STATUS.md` for current state and `DECISIONS.md` before changing anything listed there. Don't re-read the whole codebase; open only the files the task touches.
 
@@ -39,7 +39,7 @@ node extension/build.mjs        # unpacked builds in extension/dist/{chrome,fire
 cd ui; wails build -clean; go test ./...   # window -> ui/build/bin/ui.exe
 wails dev -browser=false        # in ui/: the window at http://localhost:34115 with live Go calls, handy for checking the UI
 powershell -File installer/register-native-host.ps1   # register the relay (bin/nmhost.exe) for Chrome, Edge, Firefox
-powershell -File installer/install.ps1   # build, install to %LOCALAPPDATA%\Programs\Internet Downloader, shortcuts, relay from there
+powershell -File installer/install.ps1   # build, install to %LOCALAPPDATA%\Programs\Galactic Downloader, shortcuts, relay from there
 powershell -File installer/build-release.ps1 -Version 0.1.0   # release into dist/release: setup.exe, extension zips, SHA256SUMS (needs Inno Setup 6)
 ```
 - `go vet` must be clean. CI runs the `build-and-test` check (`.github/workflows/build.yml`) on every PR. The `release` workflow builds the installer on PRs that touch the release build, and on a `v*` tag into a draft release; publishing a release is the user's call.

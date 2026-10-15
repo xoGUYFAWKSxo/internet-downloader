@@ -3,6 +3,10 @@
 ;
 ; It installs for the current user only, with no admin rights, into the same
 ; folder as install.ps1, so it upgrades a development install in place.
+;
+; The app was called Internet Downloader until 0.1.1. The AppId is unchanged,
+; so an upgrade stays in the old install folder (Inno Setup reuses it), and
+; the data folder, relay name and pipe keep the old name.
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
@@ -13,7 +17,7 @@
 #ifndef OutDir
   #define OutDir "..\dist\release"
 #endif
-#define AppName "Internet Downloader"
+#define AppName "Galactic Downloader"
 #define HostName "com.xoguyfawksxo.internet_downloader"
 #define Repo "https://github.com/xoGUYFAWKSxo/internet-downloader"
 
@@ -36,7 +40,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 LicenseFile={#Stage}\LICENSE.txt
 OutputDir={#OutDir}
-OutputBaseFilename=InternetDownloader-{#AppVersion}-setup
+OutputBaseFilename=GalacticDownloader-{#AppVersion}-setup
 SetupIconFile=..\ui\build\windows\icon.ico
 UninstallDisplayIcon={app}\ui.exe
 UninstallDisplayName={#AppName}
@@ -57,6 +61,11 @@ Source: "{#Stage}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\ui.exe"; WorkingDir: "{app}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\ui.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+
+[InstallDelete]
+; Shortcuts from before the rename.
+Type: files; Name: "{autoprograms}\Internet Downloader.lnk"
+Type: files; Name: "{autodesktop}\Internet Downloader.lnk"
 
 [Registry]
 ; The browser relay, for Chrome, Edge and Firefox. The manifests name

@@ -27,7 +27,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $HostName = 'com.xoguyfawksxo.internet_downloader'
-$Description = 'Internet Downloader relay'
+$Description = 'Galactic Downloader relay'
 $ManifestDir = Join-Path $env:LOCALAPPDATA 'InternetDownloader\native-host'
 
 $RegRoots = @{

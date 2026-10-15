@@ -11,7 +11,7 @@ import (
 )
 
 func TestTrayText(t *testing.T) {
-	for n, want := range map[int]string{0: "Internet Downloader", 1: "Internet Downloader: 1 download running", 3: "Internet Downloader: 3 downloads running"} {
+	for n, want := range map[int]string{0: "Galactic Downloader", 1: "Galactic Downloader: 1 download running", 3: "Galactic Downloader: 3 downloads running"} {
 		if got := trayTip(n); got != want {
 			t.Errorf("trayTip(%d) = %q", n, got)
 		}

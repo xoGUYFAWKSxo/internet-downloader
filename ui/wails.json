@@ -1,6 +1,6 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
-  "name": "Internet Downloader",
+  "name": "Galactic Downloader",
   "outputfilename": "ui",
   "frontend:install": "npm install",
   "frontend:build": "npm run build",
@@ -11,7 +11,7 @@
     "email": "206061236+xoGUYFAWKSxo@users.noreply.github.com"
   },
   "info": {
-    "productName": "Internet Downloader",
+    "productName": "Galactic Downloader",
     "productVersion": "0.0.0",
     "copyright": "GPL-3.0",
     "comments": "Download manager window"
