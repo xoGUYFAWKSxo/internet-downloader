@@ -53,7 +53,7 @@ func (e *engine) runStream(ctx context.Context, j *job, c media.Context) (string
 	if err != nil {
 		return "", 0, err
 	}
-	dir, name := e.dir, streamName(c)
+	dir, name := e.saveDir(), streamName(c)
 	if j.dir != "" {
 		dir = j.dir
 	}
@@ -157,7 +157,7 @@ func (e *engine) getFragments(ctx context.Context, j *job, r probe.Request, t st
 		j.progress = func() (int64, int) { return before + prog.Bytes.Load(), partsBefore + int(prog.Fragments.Load()) }
 	})
 	err = fetch.Fragments(ctx, r, t.Fragments, w, fetch.FragmentOptions{
-		Options:  fetch.Options{RootCAs: e.probe.RootCAs, OnLimit: e.onLimit(j)},
+		Options:  fetch.Options{RootCAs: e.probe.RootCAs, OnLimit: e.onLimit(j), Limit: e.limit},
 		Progress: &prog,
 		OnStart: func(protocol string, streams int) {
 			e.dl.update(j, func(j *job) { j.Protocol, j.Streams = protocol, streams })

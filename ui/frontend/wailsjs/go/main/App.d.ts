@@ -5,6 +5,8 @@ import {fetch} from '../models';
 import {probe} from '../models';
 import {media} from '../models';
 
+export function AddToQueue(arg1:Array<number>):Promise<void>;
+
 export function AddURL(arg1:string):Promise<main.Added>;
 
 export function AskID():Promise<number>;
@@ -25,17 +27,27 @@ export function DownloadDetail(arg1:number):Promise<fetch.Detail>;
 
 export function Downloads():Promise<Array<fetch.Status>>;
 
+export function MoveInQueue(arg1:number,arg2:number):Promise<void>;
+
 export function OpenFile(arg1:string):Promise<void>;
+
+export function OptionsTab():Promise<string>;
 
 export function PauseDownload(arg1:number):Promise<void>;
 
 export function ProgressID():Promise<number>;
 
+export function QueueInfo():Promise<fetch.QueueInfo>;
+
 export function ReceivedMedia():Promise<Array<media.Summary>>;
 
 export function RemoveDownloads(arg1:Array<number>,arg2:boolean):Promise<void>;
 
+export function RemoveFromQueue(arg1:Array<number>):Promise<void>;
+
 export function ResumeDownload(arg1:number):Promise<void>;
+
+export function SaveSettings(arg1:Record<string, string>):Promise<void>;
 
 export function SetSetting(arg1:string,arg2:string):Promise<void>;
 
@@ -45,6 +57,12 @@ export function ShowDetails(arg1:boolean):Promise<void>;
 
 export function ShowInFolder(arg1:string):Promise<void>;
 
+export function ShowOptions(arg1:string):Promise<void>;
+
 export function ShowProgress(arg1:number):Promise<void>;
 
 export function StartAsk(arg1:number,arg2:string,arg3:string,arg4:boolean):Promise<number>;
+
+export function StartQueue():Promise<void>;
+
+export function StopQueue():Promise<void>;

@@ -288,7 +288,7 @@ func (f *fragments) read(ctx context.Context, u string, start, n int64) ([]byte,
 	b := make([]byte, 0, min(max(resp.ContentLength, 0), limit)+1)
 	buf := make([]byte, 64<<10)
 	for {
-		k, rerr := resp.Body.Read(buf)
+		k, rerr := resp.Body.Read(buf[:f.o.Limit.chunk(len(buf))])
 		if int64(len(b)+k) > limit {
 			if n < 0 {
 				return b, errors.New("a segment is larger than 256 MB, which no real segment is")
@@ -298,6 +298,9 @@ func (f *fragments) read(ctx context.Context, u string, start, n int64) ([]byte,
 		}
 		b = append(b, buf[:k]...)
 		f.o.Progress.Bytes.Add(int64(k))
+		if err := f.o.Limit.wait(ctx, k); err != nil {
+			return b, err
+		}
 		if rerr == io.EOF {
 			break
 		}

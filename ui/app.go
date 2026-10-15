@@ -28,6 +28,8 @@ type App struct {
 	progress uint64
 	// ask is the link whose Download File Info box this is, or 0.
 	ask uint64
+	// options is the tab the Options window opened at, or "" in others.
+	options string
 }
 
 // The progress window's size, without and with its details.
@@ -37,6 +39,8 @@ const (
 	progressDetails = 590
 	askWidth        = 560
 	askHeight       = 290
+	optionsWidth    = 540
+	optionsHeight   = 400
 )
 
 func (a *App) startup(ctx context.Context) { a.ctx = ctx }
@@ -210,6 +214,49 @@ func (a *App) Settings() (map[string]string, error) {
 func (a *App) SetSetting(key, value string) error {
 	p, _ := json.Marshal(map[string]string{"key": key, "value": value})
 	return decode(a.call(ipc.Message{Type: "settings.set", Payload: p}))(nil)
+}
+
+// SaveSettings saves the Options window's settings, all or none.
+func (a *App) SaveSettings(set map[string]string) error {
+	p, _ := json.Marshal(set)
+	return decode(a.call(ipc.Message{Type: "settings.save", Payload: p}))(nil)
+}
+
+// OptionsTab is the tab the Options window opened at, or "" in other
+// windows.
+func (a *App) OptionsTab() string { return a.options }
+
+// ShowOptions opens the Options window at tab, or brings it forward.
+func (a *App) ShowOptions(tab string) error {
+	return a.open("--options=" + tab)
+}
+
+// QueueInfo says whether the queue is running, and the speed limit.
+func (a *App) QueueInfo() (fetch.QueueInfo, error) {
+	var out fetch.QueueInfo
+	return out, decode(a.call(ipc.Message{Type: "queue.get"}))(&out)
+}
+
+func (a *App) StartQueue() error { return decode(a.call(ipc.Message{Type: "queue.start"}))(nil) }
+
+// StopQueue stops the queue, pausing its running downloads.
+func (a *App) StopQueue() error { return decode(a.call(ipc.Message{Type: "queue.stop"}))(nil) }
+
+// AddToQueue puts stopped downloads at the end of the queue.
+func (a *App) AddToQueue(ids []uint64) error {
+	p, _ := json.Marshal(map[string]any{"ids": ids})
+	return decode(a.call(ipc.Message{Type: "queue.add", Payload: p}))(nil)
+}
+
+func (a *App) RemoveFromQueue(ids []uint64) error {
+	p, _ := json.Marshal(map[string]any{"ids": ids})
+	return decode(a.call(ipc.Message{Type: "queue.remove", Payload: p}))(nil)
+}
+
+// MoveInQueue moves a download one place earlier (by < 0) or later.
+func (a *App) MoveInQueue(id uint64, by int) error {
+	p, _ := json.Marshal(map[string]any{"id": id, "by": by})
+	return decode(a.call(ipc.Message{Type: "queue.move", Payload: p}))(nil)
 }
 
 type idOnly struct {

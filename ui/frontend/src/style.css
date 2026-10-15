@@ -262,3 +262,16 @@ body.progress-window { background: var(--chrome); }
 .ask .pw-buttons { margin-top: auto; }
 .check { display: flex; align-items: center; gap: 6px; }
 .check[hidden] { display: none; }
+
+/* Options */
+.opt section { display: flex; flex-direction: column; gap: 8px; }
+.opt section[hidden] { display: none; }
+.opt section > label:not(.check) { margin-top: 4px; }
+.opt input[type=number] { width: 90px; }
+.opt input[type=number], .opt input[type=time] { padding: 3px 6px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 2px; }
+.opt input:disabled { opacity: 0.55; }
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.tabs button { padding: 5px 12px; border: 1px solid transparent; border-bottom: none; background: none; color: var(--text); border-radius: 3px 3px 0 0; margin-bottom: -1px; }
+.tabs button:hover { background: var(--hover); }
+.tabs button.current { background: var(--bg); border-color: var(--border); }
+.days { display: flex; flex-wrap: wrap; gap: 4px 14px; padding-left: 22px; }

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/xoGUYFAWKSxo/internet-downloader/internal/fetch"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/ipc"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/journal"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/media"
@@ -51,11 +52,15 @@ type engine struct {
 	asks asks
 	// memSettings holds settings when there is no saved list.
 	memSettings map[string]string
+	// limit is the speed limiter all downloads share.
+	limit *fetch.Limiter
+	// q is the queue's state; e.dl.mu guards it.
+	q queueState
 }
 
 func newEngine(log io.Writer) *engine {
 	return &engine{inbox: media.NewInbox(100), log: log, now: time.Now, dir: downloadDir(), ffmpeg: stream.FFmpeg(),
-		retries: []time.Duration{5 * time.Second, 15 * time.Second, 45 * time.Second}, checkpointEvery: 3 * time.Second}
+		retries: []time.Duration{5 * time.Second, 15 * time.Second, 45 * time.Second}, checkpointEvery: 3 * time.Second, limit: fetch.NewLimiter()}
 }
 
 type idRequest struct {
@@ -202,6 +207,48 @@ func (e *engine) handle(m ipc.Message) ipc.Message {
 		}
 		e.dropAsk(in.ID)
 		return ipc.Message{Type: "asks.cancel"}
+	case "settings.save":
+		var in map[string]string
+		if err := json.Unmarshal(m.Payload, &in); err != nil {
+			return fail("invalid request: " + err.Error())
+		}
+		if err := e.setSettings(in); err != nil {
+			return fail(err.Error())
+		}
+		return ipc.Message{Type: "settings.save"}
+	case "queue.get":
+		return ipc.Message{Type: "queue.get", Payload: payload(e.queueInfo())}
+	case "queue.start":
+		e.startQueue("the user")
+		return ipc.Message{Type: "queue.start"}
+	case "queue.stop":
+		e.stopQueue("the user")
+		return ipc.Message{Type: "queue.stop"}
+	case "queue.add", "queue.remove":
+		var in struct {
+			IDs []uint64 `json:"ids"`
+		}
+		if err := json.Unmarshal(m.Payload, &in); err != nil {
+			return fail("invalid request: " + err.Error())
+		}
+		if m.Type == "queue.remove" {
+			e.queueRemove(in.IDs)
+		} else if err := e.queueAdd(in.IDs); err != nil {
+			return fail(err.Error())
+		}
+		return ipc.Message{Type: m.Type}
+	case "queue.move":
+		var in struct {
+			ID uint64 `json:"id"`
+			By int    `json:"by"`
+		}
+		if err := json.Unmarshal(m.Payload, &in); err != nil {
+			return fail("invalid request: " + err.Error())
+		}
+		if err := e.queueMove(in.ID, in.By); err != nil {
+			return fail(err.Error())
+		}
+		return ipc.Message{Type: "queue.move"}
 	case "settings.get":
 		return ipc.Message{Type: "settings.get", Payload: payload(e.settings())}
 	case "settings.set":
