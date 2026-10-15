@@ -37,6 +37,8 @@ func runTray(e *engine, l net.Listener, served <-chan error) {
 			options.Disable()
 		}
 		systray.AddSeparator()
+		update := systray.AddMenuItem("", "Opens the download page in the browser")
+		update.Hide()
 		quit := systray.AddMenuItem("Quit", "Stop the downloader")
 		go func() {
 			tick := time.NewTicker(2 * time.Second)
@@ -63,6 +65,10 @@ func runTray(e *engine, l net.Listener, served <-chan error) {
 						fmt.Fprintln(e.log, "engine: couldn't save the setting:", err)
 					}
 					syncCheck(limit, e.setting(setLimit) == "1")
+				case <-update.ClickedCh:
+					if err := openPage(releasesPage); err != nil {
+						fmt.Fprintln(e.log, "engine: couldn't open the download page:", err)
+					}
 				case <-options.ClickedCh:
 					if err := showWindow("--options"); err != nil {
 						fmt.Fprintln(e.log, "engine: couldn't open Options:", err)
@@ -82,6 +88,12 @@ func runTray(e *engine, l net.Listener, served <-chan error) {
 					// The windows and the scheduler change these too.
 					syncCheck(limit, e.setting(setLimit) == "1")
 					queue.SetTitle(queueLabel(e.queueInfo().Running))
+					if v := e.newerVersion(); v != "" {
+						update.SetTitle(updateLabel(v))
+						update.Show()
+					} else {
+						update.Hide()
+					}
 				}
 			}
 		}()
@@ -106,6 +118,18 @@ func quitQuestion(running int) string {
 		return "A download is still running. Quit anyway?\n\nA file download is paused and can be resumed later; a stream has to start again."
 	}
 	return fmt.Sprintf("%d downloads are still running. Quit anyway?\n\nFile downloads are paused and can be resumed later; streams have to start again.", running)
+}
+
+func updateLabel(v string) string { return "Get version " + v + "…" }
+
+// openPage opens a web page in the default browser.
+func openPage(u string) error {
+	verb, _ := windows.UTF16PtrFromString("open")
+	file, err := windows.UTF16PtrFromString(u)
+	if err != nil {
+		return err
+	}
+	return windows.ShellExecute(0, verb, file, nil, nil, windows.SW_SHOWNORMAL)
 }
 
 func queueLabel(running bool) string {

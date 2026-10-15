@@ -31,7 +31,7 @@ const workPrefix = ".internet-downloader-"
 // parallel into a work folder beside the final file, then FFmpeg joins the
 // tracks into one file.
 func (e *engine) downloadStream(c media.Context) uint64 {
-	return e.start(c.URL, nil, func(ctx context.Context, j *job) { e.runStreamJob(ctx, j, c) })
+	return e.startJob(c.URL, nil, func(j *job) { j.referrer = c.Referer }, func(ctx context.Context, j *job) { e.runStreamJob(ctx, j, c) })
 }
 
 func (e *engine) runStreamJob(ctx context.Context, j *job, c media.Context) {

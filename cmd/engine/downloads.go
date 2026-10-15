@@ -34,6 +34,8 @@ const keepDownloads = 200
 type job struct {
 	fetch.Status
 	host string // for the log; never the full address, which can hold tokens
+	// from and referrer are where the file came from, for its mark of the web.
+	from, referrer string
 	// progress, while set, gives the bytes and segments written so far.
 	progress func() (int64, int)
 	cancel   context.CancelCauseFunc
@@ -178,7 +180,10 @@ func (e *engine) startJob(u string, req *probe.Request, set func(*job), run func
 func (e *engine) newJob(u string, req *probe.Request, set func(*job)) *job {
 	e.dl.mu.Lock()
 	e.dl.next++
-	j := &job{Status: fetch.Status{ID: e.dl.next, Name: hostOf(u), Size: -1, State: fetch.Checking, Started: e.now().Format(time.RFC3339)}, host: hostOf(u), req: req}
+	j := &job{Status: fetch.Status{ID: e.dl.next, Name: hostOf(u), Size: -1, State: fetch.Checking, Started: e.now().Format(time.RFC3339)}, host: hostOf(u), from: u, req: req}
+	if req != nil {
+		j.referrer = req.Referer
+	}
 	if set != nil {
 		set(j)
 	}
@@ -424,6 +429,10 @@ func (e *engine) done(j *job, path string, size int64) {
 		j.Size, j.PartsDone, j.progress = size, j.Parts, nil
 		j.part, j.have, j.Queue = "", nil, 0
 	})
+	if err := outfile.MarkFromInternet(path, j.from, j.referrer); err != nil {
+		// The file is complete; it just lacks the tag (FAT32 and exFAT have no place for it).
+		fmt.Fprintf(e.log, "download %d (%s): couldn't mark the file as from the internet: %v\n", j.ID, j.host, err)
+	}
 	e.end(j)
 	if e.show != nil && e.setting(setDone) == "1" {
 		if err := e.show(fmt.Sprintf("--progress=%d", j.ID)); err != nil {
@@ -663,7 +672,7 @@ func (e *engine) restore(jr *journal.Journal) error {
 	for _, r := range recs {
 		j := &job{Status: r.Status, req: r.Request, part: r.Part, size: r.Size, validator: r.Validator, have: r.Have, dir: r.Dir, name: r.Name, cancel: func(error) {}}
 		if r.Request != nil {
-			j.host = hostOf(r.Request.URL)
+			j.host, j.from, j.referrer = hostOf(r.Request.URL), r.Request.URL, r.Request.Referer
 		}
 		wasRunning := false
 		switch j.State {

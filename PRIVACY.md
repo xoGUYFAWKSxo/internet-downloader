@@ -15,7 +15,15 @@ When you choose to download something (with the popup's buttons or the right-cli
 
 ## What the app does with it
 
-The app uses that information only to download the file from the site it came from. Cookies and sign-in headers are kept in memory, and while a download can still be resumed, in the app's database on your computer (`%LOCALAPPDATA%\InternetDownloader\downloads.db`, readable by your Windows account). They are wiped from it when the download ends, and never written to the app's log. The app connects only to the servers you download from.
+The app uses that information only to download the file from the site it came from. Cookies and sign-in headers are kept in memory, and while a download can still be resumed, in the app's database on your computer (`%LOCALAPPDATA%\InternetDownloader\downloads.db`, readable by your Windows account). They are wiped from it when the download ends, and never written to the app's log. The app connects only to the servers you download from, and once a day to GitHub to see whether a new version is out.
+
+## Checking for a new version
+
+Once a day the app asks GitHub (`api.github.com`) for the name of this project's latest release. The request carries the app's version in its User-Agent, and, as with any connection, GitHub sees your IP address; GitHub's privacy statement covers what it keeps. Nothing about your downloads is sent. If a newer version exists, the window and the tray menu offer the download page; nothing is downloaded or installed by itself. Turn the check off in Options, General.
+
+## Files you download
+
+Like a browser, the app marks each finished file as downloaded from the internet (the Windows "Zone.Identifier", or mark of the web), so Windows warns before running it. The mark holds the file's address and the page it came from, without anything after a `?`, and stays with the file on your computer.
 
 ## Removing the data
 

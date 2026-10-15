@@ -222,6 +222,31 @@ func (a *App) SaveSettings(set map[string]string) error {
 	return decode(a.call(ipc.Message{Type: "settings.save", Payload: p}))(nil)
 }
 
+// releasesPage is where a new version is downloaded from.
+const releasesPage = "https://github.com/xoGUYFAWKSxo/internet-downloader/releases/latest"
+
+// NewerVersion is a newer version of the app the engine found, or "". An
+// engine from before 0.1.8 doesn't check, which also gives "".
+func (a *App) NewerVersion() string {
+	var out struct {
+		Version string `json:"version"`
+	}
+	if err := decode(a.call(ipc.Message{Type: "update.get"}))(&out); err != nil {
+		return ""
+	}
+	return out.Version
+}
+
+// OpenReleasesPage opens the download page in the default browser.
+func (a *App) OpenReleasesPage() error {
+	verb, _ := windows.UTF16PtrFromString("open")
+	page, _ := windows.UTF16PtrFromString(releasesPage)
+	if err := windows.ShellExecute(0, verb, page, nil, nil, windows.SW_SHOWNORMAL); err != nil {
+		return fmt.Errorf("Windows couldn't open the download page: %w", err)
+	}
+	return nil
+}
+
 // OptionsTab is the tab the Options window opened at, or "" in other
 // windows.
 func (a *App) OptionsTab() string { return a.options }
