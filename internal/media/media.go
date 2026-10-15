@@ -17,6 +17,8 @@ const (
 	KindDASH  = "dash"
 	KindVideo = "video"
 	KindAudio = "audio"
+	// KindFile is any other file: a download the browser started, or a link.
+	KindFile = "file"
 )
 
 // MaxManifest is the largest manifest text the engine keeps. Real playlists
@@ -40,6 +42,7 @@ type Context struct {
 	URL           string            `json:"url"`
 	Kind          string            `json:"kind"`
 	ContentType   string            `json:"contentType,omitempty"`
+	Size          int64             `json:"size,omitempty"` // bytes, as the browser saw them; 0 = unknown
 	PageURL       string            `json:"pageUrl,omitempty"`
 	PageTitle     string            `json:"pageTitle,omitempty"`
 	Referer       string            `json:"referer,omitempty"`
@@ -59,7 +62,7 @@ func (c *Context) Validate() error {
 		return errors.New("the stream address isn't a web address")
 	}
 	switch c.Kind {
-	case KindHLS, KindDASH, KindVideo, KindAudio:
+	case KindHLS, KindDASH, KindVideo, KindAudio, KindFile:
 	default:
 		return errors.New("unknown stream type " + quote(c.Kind))
 	}

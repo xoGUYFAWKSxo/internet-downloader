@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   classify, isSegment, totalSize, replayHeaders, headerMap, worthListing, fileName, formatBytes, dedupeCookies, toCookie,
+  worthCatching, CATCH_MIN,
 } from "./src/detect.js";
 
 test("classify", () => {
@@ -73,4 +74,21 @@ test("isSegment", () => {
   assert.equal(isSegment("https://cdn.example/v/chunk", "video/iso.segment"), true);
   assert.equal(isSegment("https://cdn.example/v/film.mp4", "video/mp4"), false);
   assert.equal(isSegment("not a url", ""), false);
+});
+
+test("worthCatching", () => {
+  const d = { url: "https://dl.example/setup.exe", state: "in_progress", totalBytes: 50e6 };
+  assert.equal(worthCatching(d), true);
+  assert.equal(worthCatching({ ...d, totalBytes: -1, fileSize: CATCH_MIN }), true, "Firefox can give fileSize only");
+  for (const [why, x] of [
+    ["small", { totalBytes: CATCH_MIN - 1 }],
+    ["size unknown", { totalBytes: -1 }],
+    ["size not yet known", { totalBytes: 0 }],
+    ["blob", { url: "blob:https://site.example/1" }],
+    ["data", { url: "data:application/octet-stream;base64,AAAA" }],
+    ["file", { url: "file:///C:/x.exe" }],
+    ["private window", { incognito: true }],
+    ["another extension's", { byExtensionId: "abc" }],
+    ["already finished", { state: "complete" }],
+  ]) assert.equal(worthCatching({ ...d, ...x }), false, why);
 });

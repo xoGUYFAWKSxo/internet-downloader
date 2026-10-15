@@ -652,7 +652,7 @@ recheck.addEventListener('click', checkEngine);
 
 // --- Streams sent from the browser ---
 
-const LABEL: Record<string, string> = {hls: 'HLS', dash: 'DASH', video: 'Video', audio: 'Audio'};
+const LABEL: Record<string, string> = {hls: 'HLS', dash: 'DASH', video: 'Video', audio: 'Audio', file: 'File'};
 const MODE: Record<string, string> = {
     multiplexed: 'parallel streams on one connection',
     ranges: 'several connections',

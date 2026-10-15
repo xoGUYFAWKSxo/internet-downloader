@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -45,7 +46,7 @@ func TestHandle(t *testing.T) {
 			if got.Type != tc.wantType || !strings.Contains(got.Error, tc.wantErr) {
 				t.Fatalf("got %+v", got)
 			}
-			if tc.wantType == "pong" && !strings.Contains(string(got.Payload), `"version"`) {
+			if tc.wantType == "pong" && (!strings.Contains(string(got.Payload), `"version"`) || !strings.Contains(string(got.Payload), `"features":["file"]`)) {
 				t.Fatalf("pong without version: %s", got.Payload)
 			}
 		})
@@ -170,6 +171,74 @@ func TestDownloadFromMenu(t *testing.T) {
 	}
 	if r := e.handle(ext(`{"type":"download","media":{"url":"blob:https://site/x","kind":"video"}}`)); r.Type != "error" {
 		t.Fatalf("bad address accepted: %+v", r)
+	}
+}
+
+// A download the browser started ("file") is checked with the server first,
+// so the browser keeps the ones the app can't fetch again.
+func TestFileFromBrowser(t *testing.T) {
+	s := testserver.Start(t, testserver.Content(1<<20))
+	page := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte("<html>Your session has expired</html>"))
+	}))
+	t.Cleanup(page.Close)
+	gone := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(gone.Close)
+	e := newEngine(&bytes.Buffer{})
+	e.probe = probe.Options{RootCAs: s.RootCAs}
+	e.dir = t.TempDir()
+	stopped := make(chan uint64, 1)
+	e.finished = func(id uint64) { stopped <- id }
+	file := func(u, contentType string, size int) ipc.Message {
+		return e.handle(ext(fmt.Sprintf(`{"type":"file","media":{"url":%q,"kind":"file","contentType":%q,"size":%d}}`, u, contentType, size)))
+	}
+
+	refusals := []struct {
+		name, url, contentType string
+		size                   int
+		want                   string
+	}{
+		{"size differs", s.H2, "application/octet-stream", 1234, "different file"},
+		{"web page", page.URL + "/setup.exe", "application/x-msdownload", 0, "web page"},
+		{"server refuses", gone.URL + "/setup.exe", "", 0, "404"},
+		{"not a web address", "blob:https://site/x", "", 0, "web address"},
+	}
+	for _, tc := range refusals {
+		if r := file(tc.url, tc.contentType, tc.size); r.Type != "error" || !strings.Contains(r.Error, tc.want) {
+			t.Fatalf("%s: got %+v", tc.name, r)
+		}
+	}
+	if r := e.handle(ext(`{"type":"file","media":{"url":"` + s.H2 + `","kind":"video"}}`)); r.Type != "error" {
+		t.Fatalf("wrong kind accepted: %+v", r)
+	}
+	if n := len(e.inbox.Summaries()); n != 0 {
+		t.Fatalf("refused files were added: %d", n)
+	}
+	// A link from the right-click menu has no type or size; a page is fine then.
+	if r := file(page.URL+"/notes.html", "", 0); r.Type != "media.download" {
+		t.Fatalf("link to a page: %+v", r)
+	}
+	<-stopped
+
+	resp := file(s.H2, "application/octet-stream", 1<<20)
+	var job idRequest
+	if err := json.Unmarshal(resp.Payload, &job); err != nil || resp.Type != "media.download" {
+		t.Fatalf("got %+v", resp)
+	}
+	if id := <-stopped; id != job.ID {
+		t.Fatalf("finished %d, want %d", id, job.ID)
+	}
+	var list []fetch.Status
+	json.Unmarshal(e.handle(ipc.Message{Type: "downloads.list"}).Payload, &list)
+	var done *fetch.Status
+	for i := range list {
+		if list[i].ID == job.ID {
+			done = &list[i]
+		}
+	}
+	if done == nil || done.State != fetch.Done || done.Done != 1<<20 {
+		t.Fatalf("downloads %+v", list)
 	}
 }
 

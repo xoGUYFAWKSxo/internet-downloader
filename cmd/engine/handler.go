@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -73,7 +75,9 @@ func payload(v any) json.RawMessage {
 }
 
 func pong() ipc.Message {
-	return ipc.Message{Type: "pong", Payload: payload(map[string]string{"version": version.Version})}
+	// features lets a newer extension check before using something an older
+	// app doesn't have: "file" is the "file" message for any download.
+	return ipc.Message{Type: "pong", Payload: payload(map[string]any{"version": version.Version, "features": []string{"file"}})}
 }
 
 func fail(msg string) ipc.Message { return ipc.Message{Type: "error", Error: msg} }
@@ -276,31 +280,77 @@ func (e *engine) handle(m ipc.Message) ipc.Message {
 		case "download":
 			// From the right-click menu: add the item, then ask where to
 			// save it, or start it at once.
-			added := e.addMedia(in.Browser, in.Message.Media)
-			if added.Type != "media.added" {
-				return added
-			}
-			var item idRequest
-			json.Unmarshal(added.Payload, &item)
-			if e.show != nil && e.setting(setAsk) == "1" {
-				id := e.newAsk(in.Message.Media)
-				err := e.show(fmt.Sprintf("--ask=%d", id))
-				if err == nil {
-					return ipc.Message{Type: "downloads.ask", Payload: payload(map[string]any{"asked": true})}
-				}
-				e.dropAsk(id)
-				fmt.Fprintf(e.log, "couldn't show the Download File Info box: %v\n", err)
-			}
-			id, err := e.startDownload(item.ID)
-			if err != nil {
+			return e.downloadNow(in.Browser, in.Message.Media)
+		case "file":
+			// A download the browser started, or a link from the right-click
+			// menu. The extension keeps the browser's download paused until
+			// this answers, and lets the browser carry on after an error.
+			if err := e.checkFile(in.Message.Media); err != nil {
 				return fail(sentence(err))
 			}
-			return ipc.Message{Type: "media.download", Payload: payload(idRequest{id})}
+			return e.downloadNow(in.Browser, in.Message.Media)
 		}
 		return fail("unknown message from the browser: " + in.Message.Type)
 	default:
 		return fail("unknown request type: " + m.Type)
 	}
+}
+
+// downloadNow adds an item from the browser, then shows the Download File
+// Info box or starts it.
+func (e *engine) downloadNow(browser string, c media.Context) ipc.Message {
+	added := e.addMedia(browser, c)
+	if added.Type != "media.added" {
+		return added
+	}
+	var item idRequest
+	json.Unmarshal(added.Payload, &item)
+	if e.show != nil && e.setting(setAsk) == "1" {
+		id := e.newAsk(c)
+		err := e.show(fmt.Sprintf("--ask=%d", id))
+		if err == nil {
+			return ipc.Message{Type: "downloads.ask", Payload: payload(map[string]any{"asked": true})}
+		}
+		e.dropAsk(id)
+		fmt.Fprintf(e.log, "couldn't show the Download File Info box: %v\n", err)
+	}
+	id, err := e.startDownload(item.ID)
+	if err != nil {
+		return fail(sentence(err))
+	}
+	return ipc.Message{Type: "media.download", Payload: payload(idRequest{id})}
+}
+
+// checkFile asks the server for a file the browser was downloading, with the
+// browser's cookies, before the browser lets go of it. Some downloads can't
+// be fetched again (a form sent with POST, a one-time link); the server then
+// usually answers with an error or a web page, and the browser keeps those.
+func (e *engine) checkFile(c media.Context) error {
+	if err := c.Validate(); err != nil {
+		return err
+	}
+	if c.Kind != media.KindFile {
+		return errors.New("unknown file type " + strconv.Quote(c.Kind))
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	res, err := probe.Probe(ctx, probe.Request{URL: c.URL, Referer: c.Referer, Headers: c.Headers, Cookies: c.Cookies}, e.probe)
+	if err != nil {
+		fmt.Fprintf(e.log, "file from the browser, %s: %v\n", hostOf(c.URL), err)
+		return err
+	}
+	if c.Size > 0 && res.Size >= 0 && res.Size != c.Size {
+		return fmt.Errorf("the server sent the app a different file (%d bytes, the browser's was %d)", res.Size, c.Size)
+	}
+	if c.ContentType != "" && isPage(res.ContentType) && !isPage(c.ContentType) {
+		return errors.New("the server sent the app a web page instead of the file")
+	}
+	return nil
+}
+
+func isPage(contentType string) bool {
+	t := strings.ToLower(strings.TrimSpace(strings.SplitN(contentType, ";", 2)[0]))
+	return t == "text/html" || t == "application/xhtml+xml"
 }
 
 func (e *engine) addMedia(browser string, c media.Context) ipc.Message {

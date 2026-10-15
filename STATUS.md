@@ -123,5 +123,12 @@ The app and extension are called Galactic Downloader from 0.1.2 (0.1.0 and 0.1.1
 
 The icon is a Milky Way-style galaxy (`docs/store-assets/galaxy.py`), in the window, tray, installer and extension. Store screenshots, Chrome's promo tile and Edge's logo are in `docs/store-assets/`. The Firefox submission (0.1.3) still has the old arrow icon; the next extension version brings the galaxy.
 
+## Browser downloads go to the app (from 0.1.5)
+- The extension catches files of 1 MB and larger that the browser starts downloading (`downloads.onCreated`). It pauses the browser's download and sends a `file` message with the address, Referer, type, size and cookies. The engine checks the server first (an error, a web page instead of the file, or a different size is refused). Then the browser's copy is cancelled and removed from its list. On a refusal it is resumed. Blob/data/file addresses, private windows, small files and files of unknown size stay with the browser. A switch in the popup turns it off.
+- New right-click entry "Download link with Galactic Downloader" on any link, sent the same way.
+- Compatibility: older apps answer `file` with "unknown message", so the browser just carries on. The engine's pong now lists `features: ["file"]`, and the popup says when the app is too old.
+- New `downloads` permission: Chrome and Edge get it before their first store submission. Firefox users are asked once on the update.
+- Tested with fake browser APIs and local servers. It has not been tried yet in a real Chrome, Edge or Firefox.
+
 ## Not done yet
 Resuming streams (HLS/DASH). The received-streams list is still in memory only, so it empties when the engine restarts.
