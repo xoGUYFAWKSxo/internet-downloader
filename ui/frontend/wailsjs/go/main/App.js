@@ -30,6 +30,10 @@ export function CheckServer(arg1) {
   return window['go']['main']['App']['CheckServer'](arg1);
 }
 
+export function CheckTarget(arg1, arg2) {
+  return window['go']['main']['App']['CheckTarget'](arg1, arg2);
+}
+
 export function ChooseFolder(arg1) {
   return window['go']['main']['App']['ChooseFolder'](arg1);
 }
@@ -44,6 +48,10 @@ export function DownloadDetail(arg1) {
 
 export function Downloads() {
   return window['go']['main']['App']['Downloads']();
+}
+
+export function GrowWindow(arg1) {
+  return window['go']['main']['App']['GrowWindow'](arg1);
 }
 
 export function MoveInQueue(arg1, arg2) {

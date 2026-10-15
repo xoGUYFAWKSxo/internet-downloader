@@ -270,6 +270,8 @@ body.progress-window { background: var(--chrome); }
 .opt input[type=number] { width: 90px; }
 .opt input[type=number], .opt input[type=time] { padding: 3px 6px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 2px; }
 .opt input:disabled { opacity: 0.55; }
+.opt textarea { width: 100%; padding: 4px 6px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 2px; resize: vertical; user-select: text; }
+.ask #ask-same button { padding: 1px 8px; font-size: 12px; }
 .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
 .tabs button { padding: 5px 12px; border: 1px solid transparent; border-bottom: none; background: none; color: var(--text); border-radius: 3px 3px 0 0; margin-bottom: -1px; }
 .tabs button:hover { background: var(--hover); }

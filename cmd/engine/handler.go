@@ -343,6 +343,15 @@ func (e *engine) checkFile(c media.Context) error {
 	if c.Kind != media.KindFile {
 		return errors.New("unknown file type " + strconv.Quote(c.Kind))
 	}
+	// minSize marks a download the browser started; the user's rules apply
+	// to those, not to links sent from the right-click menu.
+	caught := c.MinSize > 0
+	if caught {
+		if why := e.leftToBrowser(c.URL, c.PageURL, c.Referer); why != "" {
+			fmt.Fprintf(e.log, "file from the browser, %s: left to the browser (%s)\n", hostOf(c.URL), why)
+			return errTooSmall
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	res, err := probe.Probe(ctx, probe.Request{URL: c.URL, Referer: c.Referer, Headers: c.Headers, Cookies: c.Cookies}, e.probe)
@@ -350,8 +359,14 @@ func (e *engine) checkFile(c media.Context) error {
 		fmt.Fprintf(e.log, "file from the browser, %s: %v\n", hostOf(c.URL), err)
 		return err
 	}
-	if c.MinSize > 0 && res.Size < c.MinSize { // also when the size is unknown (-1)
-		return errTooSmall
+	if caught {
+		if res.Size < e.catchMin(c.MinSize) { // also when the size is unknown (-1)
+			return errTooSmall
+		}
+		if why := e.typeLeft(res.FileName); why != "" {
+			fmt.Fprintf(e.log, "file from the browser, %s: left to the browser (%s)\n", hostOf(c.URL), why)
+			return errTooSmall
+		}
 	}
 	if c.Size > 0 && res.Size >= 0 && res.Size != c.Size {
 		return fmt.Errorf("the server sent the app a different file (%d bytes, the browser's was %d)", res.Size, c.Size)
@@ -362,7 +377,10 @@ func (e *engine) checkFile(c media.Context) error {
 	return nil
 }
 
-var errTooSmall = errors.New("the file is smaller than the browser asked for, or its size is unknown")
+// errTooSmall is a download the browser keeps: smaller than the smallest
+// size taken, of unknown size, or from a site or of a type the user leaves
+// to the browser.
+var errTooSmall = errors.New("the browser keeps this download")
 
 func isPage(contentType string) bool {
 	t := strings.ToLower(strings.TrimSpace(strings.SplitN(contentType, ";", 2)[0]))

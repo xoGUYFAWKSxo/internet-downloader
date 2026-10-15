@@ -10,6 +10,9 @@ export namespace fetch {
 	    stream: boolean;
 	    error?: string;
 	    dir: string;
+	    same?: string;
+	    sameId?: number;
+	    sameName?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new AskInfo(source);
@@ -26,6 +29,9 @@ export namespace fetch {
 	        this.stream = source["stream"];
 	        this.error = source["error"];
 	        this.dir = source["dir"];
+	        this.same = source["same"];
+	        this.sameId = source["sameId"];
+	        this.sameName = source["sameName"];
 	    }
 	}
 	export class Conn {
@@ -188,6 +194,20 @@ export namespace main {
 	        this.running = source["running"];
 	        this.version = source["version"];
 	        this.message = source["message"];
+	    }
+	}
+	export class Target {
+	    exists: boolean;
+	    free: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Target(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.exists = source["exists"];
+	        this.free = source["free"];
 	    }
 	}
 
