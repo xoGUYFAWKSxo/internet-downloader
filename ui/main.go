@@ -33,7 +33,7 @@ func main() {
 		return
 	}
 	err := wails.Run(&options.App{
-		Title:     "Internet Downloader",
+		Title:     "Galactic Downloader",
 		Width:     1040,
 		Height:    640,
 		MinWidth:  720,

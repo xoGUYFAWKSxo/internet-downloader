@@ -15,7 +15,7 @@ async function toApp(message) {
     return await api.runtime.sendNativeMessage(HOST, message);
   } catch (err) {
     // Thrown when the relay isn't registered for this browser or exits early.
-    return { ok: false, error: "Can't reach the Internet Downloader app. Is it installed? (" + err.message + ")" };
+    return { ok: false, error: "Can't reach the Galactic Downloader app. Is it installed? (" + err.message + ")" };
   }
 }
 
@@ -255,8 +255,8 @@ const MENU_PAGE = "download-playing";
 async function createMenu() {
   if (!menus) return;
   await menus.removeAll();
-  menus.create({ id: MENU_MEDIA, title: "Download this with Internet Downloader", contexts: ["video", "audio"] });
-  menus.create({ id: MENU_PAGE, title: "Download the playing video with Internet Downloader",
+  menus.create({ id: MENU_MEDIA, title: "Download this with Galactic Downloader", contexts: ["video", "audio"] });
+  menus.create({ id: MENU_PAGE, title: "Download the playing video with Galactic Downloader",
     contexts: ["page", "frame", "link", "image"], visible: false });
   menuShown = false;
   updateMenu();
@@ -289,7 +289,7 @@ async function menuClicked(info, tab) {
   if (choice.ambiguous) {
     // Several videos loaded at the same time: let the person choose.
     const opened = await api.action.openPopup?.().then(() => true, () => false);
-    if (!opened) notify("Which video?", "Several videos are loading on this page. Click the Internet Downloader button and choose one.");
+    if (!opened) notify("Which video?", "Several videos are loading on this page. Click the Galactic Downloader button and choose one.");
     return;
   }
   let item = choice.item;
@@ -303,7 +303,7 @@ async function menuClicked(info, tab) {
   }
   const r = await sendItem(tab.id, item, "download");
   // The app may show its Download File Info box instead of starting at once.
-  if (r?.ok) { if (!r.payload?.asked) notify("Downloading", (choice.title ?? "Video") + ". Progress shows in the Internet Downloader window."); }
+  if (r?.ok) { if (!r.payload?.asked) notify("Downloading", (choice.title ?? "Video") + ". Progress shows in the Galactic Downloader window."); }
   else notify("Couldn't download", r?.error ?? "No answer from the app.");
 }
 menus?.onClicked.addListener((info, tab) => { menuClicked(info, tab); });

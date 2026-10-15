@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Internet Downloader",
+  "name": "Galactic Downloader",
   "version": "0.0.1",
-  "description": "Sends downloads and media streams to the Internet Downloader app.",
+  "description": "Sends downloads and media streams to the Galactic Downloader app.",
   "permissions": [
     "nativeMessaging",
     "webRequest",
@@ -16,7 +16,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Internet Downloader",
+    "default_title": "Galactic Downloader",
     "default_icon": {
       "128": "icon.png"
     }

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Builds a release into dist\release: InternetDownloader-<version>-setup.exe
+Builds a release into dist\release: GalacticDownloader-<version>-setup.exe
 (Inno Setup 6), the extension zipped for each browser store, and their
 SHA-256 sums. The programs carry the version; FFmpeg is a pinned build,
 checked against its SHA-256 before it goes in.
@@ -74,14 +74,14 @@ try {
     # Windows' own tar, not Git's, which reads C: as a remote host.
     $tar = Join-Path $env:SystemRoot 'System32\tar.exe'
     foreach ($t in 'chrome', 'firefox') {
-        $zip = Join-Path $Out "InternetDownloader-$Version-$t-extension.zip"
+        $zip = Join-Path $Out "GalacticDownloader-$Version-$t-extension.zip"
         Invoke-Native "zipping the $t extension" { & $tar -a -c -f $zip -C "extension\dist\$t" * }
     }
     # For the Chrome Web Store and Edge Add-ons, which refuse the fixed key;
     # Firefox's store takes the Firefox zip. Not attached to the release.
     Invoke-Native 'store extension build' { node extension/build.mjs "--version=$Version" chrome-store }
     New-Item -ItemType Directory -Path (Join-Path $Out 'store') -Force | Out-Null
-    $zip = Join-Path $Out "store\InternetDownloader-$Version-chrome-store.zip"
+    $zip = Join-Path $Out "store\GalacticDownloader-$Version-chrome-store.zip"
     Invoke-Native 'zipping the store extension' { & $tar -a -c -f $zip -C 'extension\dist\chrome-store' * }
 
     # FFmpeg, from the cache when it is already there and intact.
@@ -130,7 +130,7 @@ FFmpeg-README.txt.
         }
     }
     $notice = New-Object Text.StringBuilder
-    [void]$notice.AppendLine('Internet Downloader includes these Go modules, under their own licences.')
+    [void]$notice.AppendLine('Galactic Downloader includes these Go modules, under their own licences.')
     foreach ($p in $mods.Keys) {
         $v, $d = $mods[$p]
         $lic = Get-ChildItem -LiteralPath $d -File | Where-Object { $_.Name -match '^(LICEN[CS]E|COPYING)' } | Sort-Object Name

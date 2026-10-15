@@ -24,7 +24,7 @@ func runTray(e *engine, l net.Listener, served <-chan error) {
 		systray.SetIcon(trayIcon)
 		systray.SetTooltip(trayTip(0))
 		systray.SetOnTapped(openWindow)
-		open := systray.AddMenuItem("Open Internet Downloader", "")
+		open := systray.AddMenuItem("Open Galactic Downloader", "")
 		if _, err := os.Stat(windowPath()); err != nil {
 			open.Disable()
 		}
@@ -94,11 +94,11 @@ func runTray(e *engine, l net.Listener, served <-chan error) {
 func trayTip(running int) string {
 	switch running {
 	case 0:
-		return "Internet Downloader"
+		return "Galactic Downloader"
 	case 1:
-		return "Internet Downloader: 1 download running"
+		return "Galactic Downloader: 1 download running"
 	}
-	return fmt.Sprintf("Internet Downloader: %d downloads running", running)
+	return fmt.Sprintf("Galactic Downloader: %d downloads running", running)
 }
 
 func quitQuestion(running int) string {
@@ -151,7 +151,7 @@ func windowPath() string {
 
 func confirm(question string) bool {
 	const yesNo, warning, yes = 0x4, 0x30, 6
-	title, _ := windows.UTF16PtrFromString("Internet Downloader")
+	title, _ := windows.UTF16PtrFromString("Galactic Downloader")
 	text, _ := windows.UTF16PtrFromString(question)
 	r, _ := windows.MessageBox(0, text, title, yesNo|warning)
 	return r == yes

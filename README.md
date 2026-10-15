@@ -1,4 +1,4 @@
-# Internet Downloader
+# Galactic Downloader
 
 A download manager for Windows 10/11 (working name). Early development: it works, but there is no published release yet.
 
@@ -10,7 +10,7 @@ License: GPL-3.0.
 
 ## Installing a release
 
-Download `InternetDownloader-<version>-setup.exe` from the Releases page and run it. It installs for your user only (no admin rights) into `%LOCALAPPDATA%\Programs\Internet Downloader`, with FFmpeg included, and connects the browser relay for Chrome, Edge and Firefox. Uninstall it from Windows Settings > Apps; your download list and downloaded files are kept.
+Download `GalacticDownloader-<version>-setup.exe` from the Releases page and run it. It installs for your user only (no admin rights) into `%LOCALAPPDATA%\Programs\Galactic Downloader`, with FFmpeg included, and connects the browser relay for Chrome, Edge and Firefox. Uninstall it from Windows Settings > Apps; your download list and downloaded files are kept.
 
 The extension isn't in the browser stores yet. Each release has it zipped for Chrome/Edge and for Firefox: unzip the Chrome one and load it with Load unpacked (step 5 below).
 

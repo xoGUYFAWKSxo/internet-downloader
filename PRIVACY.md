@@ -1,6 +1,6 @@
 # Privacy policy
 
-Internet Downloader (the Windows app and its browser extension for Chrome, Edge and Firefox) sends no data to its developer or to anyone else. It has no accounts, no analytics, no ads and no servers of its own. Last updated 2026-10-16.
+Galactic Downloader (the Windows app and its browser extension for Chrome, Edge and Firefox) sends no data to its developer or to anyone else. It has no accounts, no analytics, no ads and no servers of its own. Last updated 2026-10-16.
 
 ## What the extension reads
 
@@ -10,7 +10,7 @@ Internet Downloader (the Windows app and its browser extension for Chrome, Edge 
 
 ## What it sends, and where
 
-When you choose to download something (with the popup's buttons or the right-click menu), the extension sends the item's address, the page it came from, the request headers it needs, the site's cookies for it, and for streams the playlist text, to the Internet Downloader app **on the same computer**, through the browser's native messaging. It sends nothing anywhere else.
+When you choose to download something (with the popup's buttons or the right-click menu), the extension sends the item's address, the page it came from, the request headers it needs, the site's cookies for it, and for streams the playlist text, to the Galactic Downloader app **on the same computer**, through the browser's native messaging. It sends nothing anywhere else.
 
 ## What the app does with it
 
