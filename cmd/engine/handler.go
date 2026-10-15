@@ -285,7 +285,10 @@ func (e *engine) handle(m ipc.Message) ipc.Message {
 			// A download the browser started, or a link from the right-click
 			// menu. The extension keeps the browser's download paused until
 			// this answers, and lets the browser carry on after an error.
-			if err := e.checkFile(in.Message.Media); err != nil {
+			if err := e.checkFile(in.Message.Media); errors.Is(err, errTooSmall) {
+				// Not an error: the browser just keeps it, without a notice.
+				return ipc.Message{Type: "file.declined", Payload: payload(map[string]any{"declined": true})}
+			} else if err != nil {
 				return fail(sentence(err))
 			}
 			return e.downloadNow(in.Browser, in.Message.Media)
@@ -339,6 +342,9 @@ func (e *engine) checkFile(c media.Context) error {
 		fmt.Fprintf(e.log, "file from the browser, %s: %v\n", hostOf(c.URL), err)
 		return err
 	}
+	if c.MinSize > 0 && res.Size < c.MinSize { // also when the size is unknown (-1)
+		return errTooSmall
+	}
 	if c.Size > 0 && res.Size >= 0 && res.Size != c.Size {
 		return fmt.Errorf("the server sent the app a different file (%d bytes, the browser's was %d)", res.Size, c.Size)
 	}
@@ -347,6 +353,8 @@ func (e *engine) checkFile(c media.Context) error {
 	}
 	return nil
 }
+
+var errTooSmall = errors.New("the file is smaller than the browser asked for, or its size is unknown")
 
 func isPage(contentType string) bool {
 	t := strings.ToLower(strings.TrimSpace(strings.SplitN(contentType, ";", 2)[0]))

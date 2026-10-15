@@ -17,24 +17,24 @@ const notes = [];
 let popups = 0;
 const local = {};
 const dl = [];
-const found = [];
 let pauseFails = false;
+let resumeFails = false;
 globalThis.chrome = {
   storage: { session: {
     get: async () => ({ ...session }),
     set: async (o) => Object.assign(session, o),
     remove: async (k) => delete session[k],
-  }, local: {
+  }, onChanged: event(), local: {
     get: async (k) => (k in local ? { [k]: local[k] } : {}),
     set: async (o) => Object.assign(local, o),
   } },
   downloads: {
     onCreated: event(),
     pause: async (id) => { if (pauseFails) throw new Error("not in progress"); dl.push(["pause", id]); },
-    resume: async (id) => { dl.push(["resume", id]); },
+    resume: async (id) => { if (resumeFails) throw new Error("cannot be resumed"); dl.push(["resume", id]); },
+    download: async (o) => { dl.push(["download", o.url]); return 99; },
     cancel: async (id) => { dl.push(["cancel", id]); },
     erase: async (q) => { dl.push(["erase", q.id]); },
-    search: async (q) => found.filter((d) => d.id === q.id),
   },
   action: {
     setBadgeText: async ({ tabId, text }) => { badges[tabId] = text; },
@@ -216,22 +216,30 @@ test("downloads the browser starts go to the app", async () => {
   }
   assert.equal(notes.length, n);
 
-  // The size wasn't known yet when the download started.
-  reply = { ok: true, payload: { id: 4 } };
-  found.push({ id: 8, url: "https://dl.example/big.iso", state: "in_progress", totalBytes: 4e9 });
-  chrome.downloads.onCreated.fire({ id: 8, url: "https://dl.example/big.iso", state: "in_progress", totalBytes: -1 });
-  await new Promise((r) => setTimeout(r, 1100));
-  await settle();
-  assert.equal(sent.at(-1).media.url, "https://dl.example/big.iso");
-  assert.equal(sent.at(-1).media.size, 4e9);
+  // Firefox doesn't know the size yet: paused at once, and the app checks it.
+  reply = { ok: true, payload: { declined: true } };
+  const n2 = notes.length;
+  await start({ id: 8, url: "https://dl.example/report.pdf", totalBytes: -1, fileSize: -1 });
+  m = sent.at(-1);
+  assert.deepEqual([m.media.url, m.media.size, m.media.minSize], ["https://dl.example/report.pdf", undefined, 1 << 20]);
+  assert.deepEqual(dl, [["pause", 8], ["resume", 8]], "small: the browser keeps it");
+  assert.equal(notes.length, n2, "without a notice");
+  // Firefox can't resume a download paused before any bytes: start it again.
+  resumeFails = true;
+  await start({ id: 10, url: "https://dl.example/notes.pdf", totalBytes: -1, fileSize: -1 });
+  resumeFails = false;
+  assert.deepEqual(dl, [["pause", 10], ["download", "https://dl.example/notes.pdf"], ["erase", 10]]);
+  reply = { ok: true, payload: { id: 5 } };
+  await start({ id: 9, url: "https://dl.example/big.iso", totalBytes: -1, fileSize: -1 });
+  assert.deepEqual(dl, [["pause", 9], ["cancel", 9], ["erase", 9]]);
 
   // Small, private, or switched off: not touched.
   const before = sent.length;
   await start({ id: 4, url: "https://dl.example/icon.png", totalBytes: 2000 });
   await start({ id: 5, url: "https://dl.example/setup.exe", incognito: true });
-  local.catchDownloads = false;
+  chrome.storage.onChanged.fire({ catchDownloads: { newValue: false } }, "local");
   await start({ id: 6, url: "https://dl.example/setup.exe" });
-  delete local.catchDownloads;
+  chrome.storage.onChanged.fire({ catchDownloads: { newValue: true } }, "local");
   // Finished before it could be paused.
   pauseFails = true;
   await start({ id: 7, url: "https://dl.example/setup.exe" });

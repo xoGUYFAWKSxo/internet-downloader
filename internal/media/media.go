@@ -42,7 +42,8 @@ type Context struct {
 	URL           string            `json:"url"`
 	Kind          string            `json:"kind"`
 	ContentType   string            `json:"contentType,omitempty"`
-	Size          int64             `json:"size,omitempty"` // bytes, as the browser saw them; 0 = unknown
+	Size          int64             `json:"size,omitempty"`    // bytes, as the browser saw them; 0 = unknown
+	MinSize       int64             `json:"minSize,omitempty"` // for a "file": the app leaves smaller ones, and unknown sizes, to the browser
 	PageURL       string            `json:"pageUrl,omitempty"`
 	PageTitle     string            `json:"pageTitle,omitempty"`
 	Referer       string            `json:"referer,omitempty"`

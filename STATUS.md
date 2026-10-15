@@ -128,7 +128,8 @@ The icon is a Milky Way-style galaxy (`docs/store-assets/galaxy.py`), in the win
 - New right-click entry "Download link with Galactic Downloader" on any link, sent the same way.
 - Compatibility: older apps answer `file` with "unknown message", so the browser just carries on. The engine's pong now lists `features: ["file"]`, and the popup says when the app is too old.
 - New `downloads` permission: Chrome and Edge get it before their first store submission. Firefox users are asked once on the update.
-- Tested with fake browser APIs and local servers. It has not been tried yet in a real Chrome, Edge or Firefox.
+- Firefox (fixed in 0.1.6) doesn't know the size when a download starts, and a fast download finishes within a fraction of a second. So the extension pauses every http(s) download at once and sends `minSize` (1 MB). The engine probes, and answers `declined` for smaller files or files of unknown size. Firefox can't resume a download paused before its first bytes, so a declined or refused one is started again by the extension; its own downloads are never caught.
+- Checked in a real Firefox 158: a throwaway headless profile driven over WebDriver BiDi, with a stand-in for the app. A fast and a slow 20 MB file went to the app. A declined one and a 100 KB one were downloaded again by the browser and kept. Not yet checked in a real Chrome or Edge.
 
 ## Not done yet
 Resuming streams (HLS/DASH). The received-streams list is still in memory only, so it empties when the engine restarts.
