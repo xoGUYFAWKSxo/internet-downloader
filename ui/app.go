@@ -26,6 +26,8 @@ type App struct {
 	// progress is the download whose progress window this is, or 0 for the
 	// main window.
 	progress uint64
+	// ask is the link whose Download File Info box this is, or 0.
+	ask uint64
 }
 
 // The progress window's size, without and with its details.
@@ -33,9 +35,19 @@ const (
 	progressWidth   = 520
 	progressHeight  = 330
 	progressDetails = 590
+	askWidth        = 560
+	askHeight       = 290
 )
 
 func (a *App) startup(ctx context.Context) { a.ctx = ctx }
+
+// shutdown forgets the link when its box is closed without an answer. After
+// an answer the engine has forgotten it already.
+func (a *App) shutdown(context.Context) {
+	if a.ask != 0 {
+		a.call(ipc.Message{Type: "asks.cancel", Payload: idPayload(a.ask)})
+	}
+}
 
 func (a *App) show() {
 	runtime.WindowUnminimise(a.ctx)
@@ -137,14 +149,71 @@ func (a *App) RemoveDownloads(ids []uint64, deleteFiles bool) error {
 	return decode(a.call(ipc.Message{Type: "downloads.remove", Payload: p}))(nil)
 }
 
-// AddURL downloads a web address into the Downloads folder.
-func (a *App) AddURL(u string) (uint64, error) {
+// Added is what AddURL did: started download ID, or opened the Download
+// File Info box for it.
+type Added struct {
+	ID    uint64 `json:"id"`
+	Asked bool   `json:"asked"`
+}
+
+// AddURL opens the Download File Info box for a web address, or, with the
+// box turned off, downloads it into the folder last used.
+func (a *App) AddURL(u string) (Added, error) {
 	p, _ := json.Marshal(map[string]string{"url": u})
-	var out struct {
-		ID uint64 `json:"id"`
+	set, err := a.Settings()
+	if err != nil {
+		return Added{}, err
 	}
-	err := decode(a.call(ipc.Message{Type: "downloads.add", Payload: p}))(&out)
-	return out.ID, err
+	var out Added
+	if set["ask"] != "1" {
+		return out, decode(a.call(ipc.Message{Type: "downloads.add", Payload: p}))(&out)
+	}
+	if err := decode(a.call(ipc.Message{Type: "asks.add", Payload: p}))(&out); err != nil {
+		return out, err
+	}
+	out.Asked = true
+	return out, a.open(fmt.Sprintf("--ask=%d", out.ID))
+}
+
+// AskID is the link this Download File Info box is for, or 0 in other
+// windows.
+func (a *App) AskID() uint64 { return a.ask }
+
+// AskInfo gives what the box shows: the server's answer comes in while it
+// is open.
+func (a *App) AskInfo(id uint64) (fetch.AskInfo, error) {
+	var out fetch.AskInfo
+	return out, decode(a.call(ipc.Message{Type: "asks.get", Payload: idPayload(id)}))(&out)
+}
+
+// StartAsk downloads the link into dir under name, or with later adds it
+// to the list to start with Resume. It returns the download's id.
+func (a *App) StartAsk(id uint64, dir, name string, later bool) (uint64, error) {
+	p, _ := json.Marshal(map[string]any{"id": id, "dir": dir, "name": name, "later": later})
+	var out idOnly
+	return out.ID, decode(a.call(ipc.Message{Type: "asks.start", Payload: p}))(&out)
+}
+
+// ChooseFolder asks for a folder to save into, starting at current. It
+// gives "" when the user cancels.
+func (a *App) ChooseFolder(current string) (string, error) {
+	return runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{Title: "Save into", DefaultDirectory: current, CanCreateDirectories: true})
+}
+
+// Settings gives the engine's settings: "ask" and "done" ("1" or "0") and
+// "dir", the folder last saved into.
+func (a *App) Settings() (map[string]string, error) {
+	var out map[string]string
+	return out, decode(a.call(ipc.Message{Type: "settings.get"}))(&out)
+}
+
+func (a *App) SetSetting(key, value string) error {
+	p, _ := json.Marshal(map[string]string{"key": key, "value": value})
+	return decode(a.call(ipc.Message{Type: "settings.set", Payload: p}))(nil)
+}
+
+type idOnly struct {
+	ID uint64 `json:"id"`
 }
 
 // ProgressID is the download this window shows, or 0 in the main window.
@@ -159,12 +228,17 @@ func (a *App) DownloadDetail(id uint64) (fetch.Detail, error) {
 // ShowProgress opens a download's progress window, or brings it forward if
 // it is open already.
 func (a *App) ShowProgress(id uint64) error {
+	return a.open(fmt.Sprintf("--progress=%d", id))
+}
+
+// open starts another window of this program.
+func (a *App) open(arg string) error {
 	self, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	if err := exec.Command(self, fmt.Sprintf("--progress=%d", id)).Start(); err != nil {
-		return fmt.Errorf("couldn't open the progress window: %w", err)
+	if err := exec.Command(self, arg).Start(); err != nil {
+		return fmt.Errorf("couldn't open the window: %w", err)
 	}
 	return nil
 }

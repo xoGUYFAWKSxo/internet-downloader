@@ -6,6 +6,14 @@ export function AddURL(arg1) {
   return window['go']['main']['App']['AddURL'](arg1);
 }
 
+export function AskID() {
+  return window['go']['main']['App']['AskID']();
+}
+
+export function AskInfo(arg1) {
+  return window['go']['main']['App']['AskInfo'](arg1);
+}
+
 export function CancelDownload(arg1) {
   return window['go']['main']['App']['CancelDownload'](arg1);
 }
@@ -16,6 +24,10 @@ export function CheckEngine() {
 
 export function CheckServer(arg1) {
   return window['go']['main']['App']['CheckServer'](arg1);
+}
+
+export function ChooseFolder(arg1) {
+  return window['go']['main']['App']['ChooseFolder'](arg1);
 }
 
 export function Download(arg1) {
@@ -54,6 +66,14 @@ export function ResumeDownload(arg1) {
   return window['go']['main']['App']['ResumeDownload'](arg1);
 }
 
+export function SetSetting(arg1, arg2) {
+  return window['go']['main']['App']['SetSetting'](arg1, arg2);
+}
+
+export function Settings() {
+  return window['go']['main']['App']['Settings']();
+}
+
 export function ShowDetails(arg1) {
   return window['go']['main']['App']['ShowDetails'](arg1);
 }
@@ -64,4 +84,8 @@ export function ShowInFolder(arg1) {
 
 export function ShowProgress(arg1) {
   return window['go']['main']['App']['ShowProgress'](arg1);
+}
+
+export function StartAsk(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['StartAsk'](arg1, arg2, arg3, arg4);
 }

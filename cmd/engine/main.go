@@ -59,6 +59,7 @@ func main() {
 	}()
 	fmt.Fprintln(os.Stderr, "engine", version.Version, "listening on", name)
 	e := newEngine(os.Stderr)
+	e.show = showWindow
 	if jr, err := journal.Open(journalPath()); err != nil {
 		// Downloads still work; the list just isn't kept.
 		fmt.Fprintln(os.Stderr, "engine: couldn't open the saved download list:", err)

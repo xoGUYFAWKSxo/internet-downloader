@@ -31,14 +31,16 @@ const workPrefix = ".internet-downloader-"
 // parallel into a work folder beside the final file, then FFmpeg joins the
 // tracks into one file.
 func (e *engine) downloadStream(c media.Context) uint64 {
-	return e.start(c.URL, nil, func(ctx context.Context, j *job) {
-		path, size, err := e.runStream(ctx, j, c)
-		if err != nil {
-			e.stopped(ctx, j, err)
-			return
-		}
-		e.done(j, path, size)
-	})
+	return e.start(c.URL, nil, func(ctx context.Context, j *job) { e.runStreamJob(ctx, j, c) })
+}
+
+func (e *engine) runStreamJob(ctx context.Context, j *job, c media.Context) {
+	path, size, err := e.runStream(ctx, j, c)
+	if err != nil {
+		e.stopped(ctx, j, err)
+		return
+	}
+	e.done(j, path, size)
 }
 
 func (e *engine) runStream(ctx context.Context, j *job, c media.Context) (string, int64, error) {
@@ -51,7 +53,15 @@ func (e *engine) runStream(ctx context.Context, j *job, c media.Context) (string
 	if err != nil {
 		return "", 0, err
 	}
-	out, err := outfile.Create(e.dir, streamName(c)+ext, -1)
+	dir, name := e.dir, streamName(c)
+	if j.dir != "" {
+		dir = j.dir
+	}
+	if j.name != "" {
+		// The file type is the one the tracks need, whatever was typed.
+		name = strings.TrimSuffix(j.name, filepath.Ext(j.name))
+	}
+	out, err := outfile.Create(dir, name+ext, -1)
 	if err != nil {
 		return "", 0, err
 	}

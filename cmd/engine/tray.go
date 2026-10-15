@@ -30,6 +30,19 @@ func runTray(e *engine, l net.Listener, served <-chan error) {
 		}
 		folder := systray.AddMenuItem("Open Downloads folder", "")
 		systray.AddSeparator()
+		ask := systray.AddMenuItemCheckbox("Ask where to save links from the browser", "Show the Download File Info box", e.setting(setAsk) == "1")
+		done := systray.AddMenuItemCheckbox("Show a box when a download finishes", "", e.setting(setDone) == "1")
+		toggle := func(item *systray.MenuItem, key string) {
+			v := "1"
+			if item.Checked() {
+				v = "0"
+			}
+			if err := e.setSetting(key, v); err != nil {
+				fmt.Fprintln(e.log, "engine: couldn't save the setting:", err)
+			}
+			syncCheck(item, e.setting(key) == "1")
+		}
+		systray.AddSeparator()
 		quit := systray.AddMenuItem("Quit", "Stop the downloader")
 		go func() {
 			tick := time.NewTicker(2 * time.Second)
@@ -40,6 +53,10 @@ func runTray(e *engine, l net.Listener, served <-chan error) {
 					openWindow()
 				case <-folder.ClickedCh:
 					exec.Command("explorer.exe", e.dir).Start()
+				case <-ask.ClickedCh:
+					toggle(ask, setAsk)
+				case <-done.ClickedCh:
+					toggle(done, setDone)
 				case <-quit.ClickedCh:
 					if n := e.running(); n > 0 && !confirm(quitQuestion(n)) {
 						continue
@@ -52,6 +69,9 @@ func runTray(e *engine, l net.Listener, served <-chan error) {
 					return
 				case <-tick.C:
 					systray.SetTooltip(trayTip(e.running()))
+					// The windows can change these too.
+					syncCheck(ask, e.setting(setAsk) == "1")
+					syncCheck(done, e.setting(setDone) == "1")
 				}
 			}
 		}()
@@ -76,6 +96,27 @@ func quitQuestion(running int) string {
 		return "A download is still running. Quit anyway?\n\nA file download is paused and can be resumed later; a stream has to start again."
 	}
 	return fmt.Sprintf("%d downloads are still running. Quit anyway?\n\nFile downloads are paused and can be resumed later; streams have to start again.", running)
+}
+
+func syncCheck(item *systray.MenuItem, on bool) {
+	switch {
+	case on && !item.Checked():
+		item.Check()
+	case !on && item.Checked():
+		item.Uncheck()
+	}
+}
+
+// showWindow opens one of ui.exe's small windows: --ask=ID for the Download
+// File Info box, --progress=ID for a download's progress.
+func showWindow(args ...string) error {
+	p := windowPath()
+	if _, err := os.Stat(p); err != nil {
+		return err
+	}
+	cmd := exec.Command(p, args...)
+	cmd.Dir = filepath.Dir(p)
+	return cmd.Start()
 }
 
 // openWindow starts ui.exe from the engine's folder. A second copy hands

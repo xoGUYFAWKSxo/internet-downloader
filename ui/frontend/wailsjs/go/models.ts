@@ -1,5 +1,33 @@
 export namespace fetch {
 	
+	export class AskInfo {
+	    id: number;
+	    host: string;
+	    name: string;
+	    size: number;
+	    checking: boolean;
+	    resume: string;
+	    stream: boolean;
+	    error?: string;
+	    dir: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AskInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.host = source["host"];
+	        this.name = source["name"];
+	        this.size = source["size"];
+	        this.checking = source["checking"];
+	        this.resume = source["resume"];
+	        this.stream = source["stream"];
+	        this.error = source["error"];
+	        this.dir = source["dir"];
+	    }
+	}
 	export class Conn {
 	    state: string;
 	    start: number;
@@ -116,6 +144,20 @@ export namespace fetch {
 
 export namespace main {
 	
+	export class Added {
+	    id: number;
+	    asked: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new Added(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.asked = source["asked"];
+	    }
+	}
 	export class EngineStatus {
 	    running: boolean;
 	    version?: string;

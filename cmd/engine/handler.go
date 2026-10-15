@@ -45,6 +45,12 @@ type engine struct {
 	retries []time.Duration
 	// checkpointEvery is how often a download's progress is committed.
 	checkpointEvery time.Duration
+	// show, if set, opens a window of ui.exe with these arguments.
+	show func(args ...string) error
+	// asks are links waiting in the Download File Info box.
+	asks asks
+	// memSettings holds settings when there is no saved list.
+	memSettings map[string]string
 }
 
 func newEngine(log io.Writer) *engine {
@@ -152,6 +158,64 @@ func (e *engine) handle(m ipc.Message) ipc.Message {
 			return fail(err.Error())
 		}
 		return ipc.Message{Type: "downloads.add", Payload: payload(idRequest{id})}
+	case "asks.add":
+		var in struct {
+			URL string `json:"url"`
+		}
+		if err := json.Unmarshal(m.Payload, &in); err != nil {
+			return fail("invalid request: " + err.Error())
+		}
+		u, err := webAddress(in.URL)
+		if err != nil {
+			return fail(err.Error())
+		}
+		return ipc.Message{Type: "asks.add", Payload: payload(idRequest{e.newAsk(media.Context{URL: u, Kind: streamKind(u)})})}
+	case "asks.get":
+		var in idRequest
+		if err := json.Unmarshal(m.Payload, &in); err != nil {
+			return fail("invalid request: " + err.Error())
+		}
+		a, err := e.askInfo(in.ID)
+		if err != nil {
+			return fail(err.Error())
+		}
+		return ipc.Message{Type: "asks.get", Payload: payload(a)}
+	case "asks.start":
+		var in struct {
+			ID    uint64 `json:"id"`
+			Dir   string `json:"dir"`
+			Name  string `json:"name"`
+			Later bool   `json:"later"`
+		}
+		if err := json.Unmarshal(m.Payload, &in); err != nil {
+			return fail("invalid request: " + err.Error())
+		}
+		id, err := e.answerAsk(in.ID, in.Dir, in.Name, in.Later)
+		if err != nil {
+			return fail(err.Error())
+		}
+		return ipc.Message{Type: "asks.start", Payload: payload(idRequest{id})}
+	case "asks.cancel":
+		var in idRequest
+		if err := json.Unmarshal(m.Payload, &in); err != nil {
+			return fail("invalid request: " + err.Error())
+		}
+		e.dropAsk(in.ID)
+		return ipc.Message{Type: "asks.cancel"}
+	case "settings.get":
+		return ipc.Message{Type: "settings.get", Payload: payload(e.settings())}
+	case "settings.set":
+		var in struct {
+			Key   string `json:"key"`
+			Value string `json:"value"`
+		}
+		if err := json.Unmarshal(m.Payload, &in); err != nil {
+			return fail("invalid request: " + err.Error())
+		}
+		if err := e.setSetting(in.Key, in.Value); err != nil {
+			return fail(err.Error())
+		}
+		return ipc.Message{Type: "settings.set"}
 	case "extension":
 		var in fromExtension
 		if err := json.Unmarshal(m.Payload, &in); err != nil {
@@ -163,13 +227,23 @@ func (e *engine) handle(m ipc.Message) ipc.Message {
 		case "media":
 			return e.addMedia(in.Browser, in.Message.Media)
 		case "download":
-			// From the right-click menu: add the item and start it at once.
+			// From the right-click menu: add the item, then ask where to
+			// save it, or start it at once.
 			added := e.addMedia(in.Browser, in.Message.Media)
 			if added.Type != "media.added" {
 				return added
 			}
 			var item idRequest
 			json.Unmarshal(added.Payload, &item)
+			if e.show != nil && e.setting(setAsk) == "1" {
+				id := e.newAsk(in.Message.Media)
+				err := e.show(fmt.Sprintf("--ask=%d", id))
+				if err == nil {
+					return ipc.Message{Type: "downloads.ask", Payload: payload(map[string]any{"asked": true})}
+				}
+				e.dropAsk(id)
+				fmt.Fprintf(e.log, "couldn't show the Download File Info box: %v\n", err)
+			}
 			id, err := e.startDownload(item.ID)
 			if err != nil {
 				return fail(sentence(err))

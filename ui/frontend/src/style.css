@@ -250,3 +250,15 @@ body.progress-window { background: var(--chrome); }
 .pw-conns th { position: sticky; top: 0; background: var(--chrome); text-align: left; font-weight: normal; padding: 3px 8px; border-bottom: 1px solid var(--border); }
 .pw-conns td { padding: 2px 8px; }
 .pw-conns .num { text-align: right; width: 1%; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* --- Download File Info box --- */
+.ask { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; height: 100%; margin: 0; }
+.ask .pw-info td { overflow: visible; }
+.ask input[type=text] { width: 100%; padding: 4px 6px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 2px; user-select: text; }
+.ask .ask-row { display: flex; gap: 6px; }
+.ask .ask-row button { flex: none; padding: 3px 10px; }
+.ask p { margin: 0; font-size: 12px; }
+.ask p:empty { display: none; }
+.ask .pw-buttons { margin-top: auto; }
+.check { display: flex; align-items: center; gap: 6px; }
+.check[hidden] { display: none; }

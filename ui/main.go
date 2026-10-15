@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"os"
@@ -19,9 +20,13 @@ import (
 var assets embed.FS
 
 func main() {
-	app := &App{progress: progressArg(os.Args[1:])}
-	if app.progress != 0 {
-		runProgress(app)
+	app := &App{progress: idArg(os.Args[1:], "--progress="), ask: idArg(os.Args[1:], "--ask=")}
+	switch {
+	case app.progress != 0:
+		runSmall(app, "Download progress", progressWidth, progressHeight, fmt.Sprintf("progress.%d", app.progress))
+		return
+	case app.ask != 0:
+		runSmall(app, "Download File Info", askWidth, askHeight, fmt.Sprintf("ask.%d", app.ask))
 		return
 	}
 	err := wails.Run(&options.App{
@@ -47,11 +52,11 @@ func main() {
 	}
 }
 
-// progressArg reads --progress=ID, which opens one download's progress
-// window instead of the list.
-func progressArg(args []string) uint64 {
+// idArg reads --progress=ID, which opens one download's progress window
+// instead of the list, or --ask=ID, the Download File Info box of a link.
+func idArg(args []string, prefix string) uint64 {
 	for _, a := range args {
-		if v, ok := strings.CutPrefix(a, "--progress="); ok {
+		if v, ok := strings.CutPrefix(a, prefix); ok {
 			id, _ := strconv.ParseUint(v, 10, 64)
 			return id
 		}
@@ -59,21 +64,26 @@ func progressArg(args []string) uint64 {
 	return 0
 }
 
-// runProgress shows a download's progress window. It is a process of its
-// own, as Wails gives each process one window; opening it again for the
-// same download brings the open one forward.
-func runProgress(app *App) {
+// runSmall shows a download's progress window or a link's Download File
+// Info box. Each is a process of its own, as Wails gives each process one
+// window; opening it again for the same download or link brings the open
+// one forward.
+func runSmall(app *App, title string, width, height int, id string) {
 	err := wails.Run(&options.App{
-		Title:         "Download progress",
-		Width:         progressWidth,
-		Height:        progressHeight,
+		Title:         title,
+		Width:         width,
+		Height:        height,
 		DisableResize: true,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
 		OnStartup: app.startup,
+		// Opened by the engine, a background process, Windows can leave
+		// the window minimised behind others; bring it up once it's drawn.
+		OnDomReady: func(context.Context) { app.show() },
+		OnShutdown: app.shutdown,
 		SingleInstanceLock: &options.SingleInstanceLock{
-			UniqueId:               fmt.Sprintf("com.xoguyfawksxo.internet_downloader.progress.%d", app.progress),
+			UniqueId:               "com.xoguyfawksxo.internet_downloader." + id,
 			OnSecondInstanceLaunch: func(options.SecondInstanceData) { app.show() },
 		},
 		Bind: []interface{}{app},

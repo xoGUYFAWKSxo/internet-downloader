@@ -49,3 +49,19 @@ type Span struct {
 	Start int64 `json:"start"`
 	End   int64 `json:"end"`
 }
+
+// AskInfo is what the Download File Info box shows.
+type AskInfo struct {
+	ID       uint64 `json:"id"`
+	Host     string `json:"host"` // never the full address, which can hold tokens
+	Name     string `json:"name"`
+	Size     int64  `json:"size"` // -1 while unknown
+	Checking bool   `json:"checking"`
+	// Resume is "yes" or "no" once the server has answered.
+	Resume string `json:"resume"`
+	// Stream is an HLS or DASH stream: its file type is picked when it is
+	// joined, and it can't wait in the list, as it can't be resumed.
+	Stream bool   `json:"stream"`
+	Error  string `json:"error,omitempty"`
+	Dir    string `json:"dir"` // the folder offered
+}

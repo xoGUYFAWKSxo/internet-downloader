@@ -14,6 +14,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	_ "modernc.org/sqlite"
 
@@ -37,7 +38,18 @@ CREATE TABLE IF NOT EXISTS ranges (
 	"end"    INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ranges_download ON ranges(download);
+CREATE TABLE IF NOT EXISTS settings (
+	key   TEXT PRIMARY KEY,
+	value TEXT NOT NULL
+);
 `
+
+// columns are added to downloads after its first version; adding one that
+// is already there fails harmlessly.
+var columns = []string{
+	`ALTER TABLE downloads ADD COLUMN dir TEXT NOT NULL DEFAULT ''`,  // the folder chosen to save into
+	`ALTER TABLE downloads ADD COLUMN name TEXT NOT NULL DEFAULT ''`, // the file name chosen
+}
 
 type Journal struct{ db *sql.DB }
 
@@ -49,6 +61,7 @@ type Record struct {
 	Size      int64
 	Validator string
 	Have      []outfile.Range
+	Dir, Name string // where the user chose to save it; "" for the default
 }
 
 // Open opens (or creates) the database at path.
@@ -64,6 +77,12 @@ func Open(path string) (*Journal, error) {
 		db.Close()
 		return nil, fmt.Errorf("couldn't open the download list (%s): %w", path, err)
 	}
+	for _, c := range columns {
+		if _, err := db.Exec(c); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+			db.Close()
+			return nil, fmt.Errorf("couldn't update the download list (%s): %w", path, err)
+		}
+	}
 	return &Journal{db: db}, nil
 }
 
@@ -76,6 +95,27 @@ func (j *Journal) Add(s fetch.Status, r *probe.Request) error {
 		return err
 	}
 	_, err = j.db.Exec(`INSERT INTO downloads (id, status, request) VALUES (?, ?, ?)`, s.ID, st, req)
+	return err
+}
+
+// SetTarget saves the folder and file name the user chose for a download.
+func (j *Journal) SetTarget(id uint64, dir, name string) error {
+	_, err := j.db.Exec(`UPDATE downloads SET dir = ?, name = ? WHERE id = ?`, dir, name, id)
+	return err
+}
+
+// Setting gives a saved setting, or def when it was never set.
+func (j *Journal) Setting(key, def string) string {
+	var v string
+	if j.db.QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&v) != nil {
+		return def
+	}
+	return v
+}
+
+// SetSetting saves a setting.
+func (j *Journal) SetSetting(key, value string) error {
+	_, err := j.db.Exec(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
 	return err
 }
 
@@ -154,7 +194,7 @@ func (j *Journal) Delete(id uint64) error {
 
 // Load gives every saved download, oldest first.
 func (j *Journal) Load() ([]Record, error) {
-	rows, err := j.db.Query(`SELECT id, status, request, part, size, validator FROM downloads ORDER BY id`)
+	rows, err := j.db.Query(`SELECT id, status, request, part, size, validator, dir, name FROM downloads ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +203,7 @@ func (j *Journal) Load() ([]Record, error) {
 		var id uint64
 		var st, req string
 		var r Record
-		if err := rows.Scan(&id, &st, &req, &r.Part, &r.Size, &r.Validator); err != nil {
+		if err := rows.Scan(&id, &st, &req, &r.Part, &r.Size, &r.Validator, &r.Dir, &r.Name); err != nil {
 			rows.Close()
 			return nil, err
 		}
