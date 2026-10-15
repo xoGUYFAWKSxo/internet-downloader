@@ -59,6 +59,13 @@ powershell -File installer/build-release.ps1 -Version 0.1.0   # release into dis
 - No DRM circumvention. Encrypted streams (Widevine, PlayReady, FairPlay) are detected and refused with a clear message. AES-128 HLS with a key the page itself serves is fine.
 - Show measured numbers only (speed, ETA, RTT). Never invent a value for the UI.
 
+## Compatibility with the extension
+The extension updates itself from the browser stores, and each change there means a new store review; people update the app themselves. Any app version must work with any released extension version, and the other way round.
+- Never change the relay name `com.xoguyfawksxo.internet_downloader`, and never remove an ID from the relay's allowed list (`ChromeExtensionIds` and `FirefoxExtensionId` in `installer/register-native-host.ps1`). The installer's AppId, the data folder and the pipe name stay the same too.
+- Never break the messages the extension sends (`toApp` and `sendItem` in `extension/src/background.js`: the `type` values and the `media` fields). The engine and relay keep accepting every released form: new fields are optional, and existing ones are never removed, renamed or given a new meaning. The same goes for the replies the extension reads (`ok`, `error`, `payload`).
+- An extension change must still work with the oldest supported app: check what the app says before using a new feature, and fall back when it isn't there.
+- Prefer putting new work in the app. Change the extension only when the browser side must change.
+
 ## Style
 - Keep comments sparse: explain why, not what. Match the surrounding code.
 - User-facing text is plain English. No marketing claims in README or UI.
