@@ -34,7 +34,10 @@ Icon: `extension/src/icon.png` (128 x 128). Privacy policy URL: https://github.c
 
 **Category:** Chrome: Tools. Edge: Productivity. Firefox: Download Management.
 
-**Screenshots** (Chrome needs at least one, 1280 x 800 or 640 x 400; Chrome also needs a 440 x 280 promo tile): the popup listing a found video on a page, the right-click menu, and the app's window.
+**Images**, in `docs/store-assets/`:
+- Screenshots, 1280 x 800: `screenshot-1-window.png` (the app's window), `screenshot-2-extension.png` (the popup listing a found video), `screenshot-3-progress.png` (a progress window). They show example downloads, not real ones. Chrome needs at least one; Edge takes the same.
+- Chrome's small promo tile, 440 x 280: `promo-tile-440x280.png`.
+- Edge's logo, 300 x 300: `logo-300.png`. Chrome and Firefox take the 128 x 128 icon from the zip.
 
 ## Privacy answers (Chrome Web Store "Privacy" tab; Edge asks similar)
 
