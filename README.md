@@ -1,12 +1,22 @@
 # Internet Downloader
 
-A download manager for Windows 10/11 (working name). Early development: nothing usable yet.
+A download manager for Windows 10/11 (working name). Early development: it works, but there is no published release yet.
 
 Planned: HTTP/3 and HTTP/2 multiplexed downloads with HTTP/1.1 range fallback, resume after drops or crashes, and a Chrome/Edge extension that hands HLS/DASH streams to the app. DRM-protected streams are not supported.
 
 See `STATUS.md` for progress and `DECISIONS.md` for design choices.
 
 License: GPL-3.0.
+
+## Installing a release
+
+Download `InternetDownloader-<version>-setup.exe` from the Releases page and run it. It installs for your user only (no admin rights) into `%LOCALAPPDATA%\Programs\Internet Downloader`, with FFmpeg included, and connects the browser relay for Chrome, Edge and Firefox. Uninstall it from Windows Settings > Apps; your download list and downloaded files are kept.
+
+The extension isn't in the browser stores yet. Each release has it zipped for Chrome/Edge and for Firefox: unzip the Chrome one and load it with Load unpacked (step 5 below).
+
+## Building a release
+
+`powershell -ExecutionPolicy Bypass -File installer\build-release.ps1 -Version 0.1.0` builds everything into `dist\release`. It needs Go, Node.js, the Wails CLI and Inno Setup 6, and downloads a pinned FFmpeg build once (checked against its SHA-256). Pushing a tag such as `v0.1.0` does the same on GitHub and puts the files in a draft release, to check and publish by hand.
 
 ## Trying the development build
 

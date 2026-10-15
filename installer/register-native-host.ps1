@@ -8,6 +8,7 @@ for the current user. No admin rights needed; everything goes under HKCU and
 .\register-native-host.ps1
 .\register-native-host.ps1 -Browsers Chrome,Firefox
 .\register-native-host.ps1 -Unregister
+.\register-native-host.ps1 -WriteManifestsTo stage   # for the installer
 #>
 param(
     [string]$HostPath = (Join-Path $PSScriptRoot '..\bin\nmhost.exe'),
@@ -16,7 +17,10 @@ param(
     [string]$FirefoxExtensionId = 'internet-downloader@xoguyfawksxo',
     [ValidateSet('Chrome', 'Edge', 'Firefox')]
     [string[]]$Browsers = @('Chrome', 'Edge', 'Firefox'),
-    [switch]$Unregister
+    [switch]$Unregister,
+    # Only writes the manifests into this folder, naming nmhost.exe beside
+    # them, for the installer to register; the registry is left alone.
+    [string]$WriteManifestsTo
 )
 
 $ErrorActionPreference = 'Stop'
@@ -36,6 +40,7 @@ function Write-JsonNoBom([string]$Path, $Object) {
 }
 
 function Set-HostKey([string]$Browser, [string]$Manifest) {
+    if ($WriteManifestsTo) { return }
     $key = Join-Path $RegRoots[$Browser] $HostName
     if (-not (Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
     Set-Item -Path $key -Value $Manifest
@@ -57,9 +62,14 @@ if ($Unregister) {
     return
 }
 
-$resolved = Resolve-Path -LiteralPath $HostPath -ErrorAction SilentlyContinue
-if (-not $resolved) { throw "nmhost.exe not found at '$HostPath'. Build it first: go build -o bin/ ./cmd/..." }
-$exe = $resolved.Path
+if ($WriteManifestsTo) {
+    # Chrome, Edge and Firefox take a path relative to the manifest on Windows.
+    $ManifestDir, $exe = $WriteManifestsTo, 'nmhost.exe'
+} else {
+    $resolved = Resolve-Path -LiteralPath $HostPath -ErrorAction SilentlyContinue
+    if (-not $resolved) { throw "nmhost.exe not found at '$HostPath'. Build it first: go build -o bin/ ./cmd/..." }
+    $exe = $resolved.Path
+}
 New-Item -ItemType Directory -Path $ManifestDir -Force | Out-Null
 
 $chromium = @($Browsers | Where-Object { $_ -ne 'Firefox' })

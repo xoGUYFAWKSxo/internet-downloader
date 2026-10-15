@@ -1,0 +1,52 @@
+name: release
+# A tag like v0.1.0 builds the installer and puts it in a draft release, to
+# be published by hand. A PR that changes the release build builds it too,
+# as an artifact only, to check it still works.
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths:
+      - installer/**
+      - .github/workflows/release.yml
+      - extension/build.mjs
+      - ui/wails.json
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: version
+        shell: bash
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then v="${GITHUB_REF_NAME#v}"; else v=0.0.0; fi
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+      - run: go test -count=1 ./...
+      - run: node --test extension/build.test.mjs extension/detect.test.mjs extension/describe.test.mjs extension/background.test.mjs
+      - run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
+      - run: choco install innosetup --version=6.7.1 -y --no-progress
+      - name: build
+        shell: powershell
+        run: .\installer\build-release.ps1 -Version $env:VERSION
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ env.VERSION }}
+          path: |
+            dist/release/*.exe
+            dist/release/*.zip
+            dist/release/SHA256SUMS.txt
+      - name: draft release
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --draft --title "Internet Downloader $VERSION" --generate-notes \
+            dist/release/*.exe dist/release/*.zip dist/release/SHA256SUMS.txt
