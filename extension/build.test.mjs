@@ -27,7 +27,7 @@ test("firefox manifest", () => {
   const m = manifestFor("firefox");
   assert.deepEqual(m.background.scripts, ["background.js"]);
   assert.equal(m.background.service_worker, undefined);
-  assert.equal(m.browser_specific_settings.gecko.id, "internet-downloader@xoguyfawksxo");
+  assert.equal(m.browser_specific_settings.gecko.id, "galactic-downloader@xoguyfawksxo");
   // Cookies, addresses and playlists go to the app, outside the browser, so
   // Firefox shows them at install; its own consent screen needs Firefox 140.
   assert.deepEqual(m.browser_specific_settings.gecko.data_collection_permissions.required, ["authenticationInfo", "browsingActivity", "websiteContent"]);
