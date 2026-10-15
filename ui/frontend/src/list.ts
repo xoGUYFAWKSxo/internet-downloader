@@ -128,7 +128,8 @@ function statusOf(d: Status): {text: string, cls: string, title: string} {
         if (d.parts) return {text: `Segment ${d.partsDone ?? 0} of ${d.parts}`, cls: '', title};
         return {text: f !== null ? percent(f) : `${size(d.done)} received`, cls: '', title};
     case 'paused':
-        if (d.queue) return {text: f ? `Queued, ${percent(f)} done` : 'Queued', cls: '', title};
+        // Queued and not started yet; one with bytes in reads Paused, as any other.
+        if (d.queue && !f) return {text: 'Queued', cls: '', title};
         return {text: f !== null ? `Paused at ${percent(f)}` : 'Paused', cls: '', title};
     case 'failed': return {text: `Error: ${d.error ?? 'failed'}`, cls: 'bad', title};
     case 'cancelled': return {text: d.error && d.error !== 'Cancelled.' ? d.error : 'Cancelled', cls: 'note', title};
