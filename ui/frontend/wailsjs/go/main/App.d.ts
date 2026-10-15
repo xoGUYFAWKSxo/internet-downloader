@@ -19,6 +19,8 @@ export function CheckEngine():Promise<main.EngineStatus>;
 
 export function CheckServer(arg1:number):Promise<probe.Result>;
 
+export function CheckTarget(arg1:string,arg2:string):Promise<main.Target>;
+
 export function ChooseFolder(arg1:string):Promise<string>;
 
 export function Download(arg1:number):Promise<number>;
@@ -26,6 +28,8 @@ export function Download(arg1:number):Promise<number>;
 export function DownloadDetail(arg1:number):Promise<fetch.Detail>;
 
 export function Downloads():Promise<Array<fetch.Status>>;
+
+export function GrowWindow(arg1:number):Promise<void>;
 
 export function MoveInQueue(arg1:number,arg2:number):Promise<void>;
 

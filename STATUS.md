@@ -138,5 +138,12 @@ The icon is a Milky Way-style galaxy (`docs/store-assets/galaxy.py`), in the win
 - While any download runs (or waits to retry), the engine asks Windows not to sleep (`SetThreadExecutionState`, as video players do). The screen may still turn off, and Sleep or closing the lid still work. Off in Options, General.
 - Old windows and extensions are unaffected: `update.get` is a new engine message only the new window sends.
 
+## Browser rules, duplicates and disk space (0.1.9)
+- Options has a Browser tab: the smallest browser download the app takes (1 MB unless raised), sites whose downloads stay in the browser (a site covers its subdomains, and counts for the page and for the file's server), and file types that stay in the browser. Typed lists are tidied ("https://www.example.com/x" becomes "www.example.com", ".PDF" becomes "pdf") or refused with the entry named. The engine applies them only to downloads the browser started (the ones the extension sends with `minSize`); links sent from the right-click menu are always taken. A site or a type in the address is checked before the server is asked; a type the server names (Content-Disposition) after. A refused one gets the same quiet `file.declined` as a small file, so every released extension already handles it.
+- The Download File Info box says when the list already has the link (not finished yet, or finished earlier, with a "Show it" button for that download's window), when a file of that name is already in the chosen folder, and when the file is larger than the free space on that drive. It grows to fit those lines. The list knows the addresses of downloads made since the app started and of unfinished ones; finished ones from before a restart are only caught by the name in the folder.
+- Disk space was already checked when a download starts: the whole file is allocated up front (`FileAllocationInfo`), and a shortfall stops it with a message giving the size and the free space. The box now says so before Start.
+- With the box turned off, a duplicate still downloads, under a numbered name.
+- README rewritten for people arriving from a release: what the app does, the download link, the SmartScreen warning.
+
 ## Not done yet
 Resuming streams (HLS/DASH). The received-streams list is still in memory only, so it empties when the engine restarts.

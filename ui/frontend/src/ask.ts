@@ -1,6 +1,6 @@
 // The Download File Info box, like IDM's: where to save a link from the
 // browser, with what its server said, before anything is downloaded.
-import {AskInfo, ChooseFolder, SetSetting, ShowProgress, StartAsk} from '../wailsjs/go/main/App';
+import {AskInfo, CheckTarget, ChooseFolder, GrowWindow, SetSetting, ShowProgress, StartAsk} from '../wailsjs/go/main/App';
 import {Quit, WindowSetTitle} from '../wailsjs/runtime/runtime';
 import {$, msg, size} from './util';
 
@@ -14,6 +14,9 @@ const PAGE = `
         <tr><th>Size</th><td id="ask-size"></td></tr>
         <tr><th>Resume capability</th><td id="ask-resume"></td></tr>
     </table>
+    <p class="note" id="ask-same" hidden><span id="ask-same-text"></span> <button type="button" id="ask-same-show">Show it</button></p>
+    <p class="note" id="ask-exists" hidden>A file with this name is already in that folder. The new one will be saved with a number added to its name.</p>
+    <p class="bad" id="ask-space" hidden></p>
     <p class="note" id="ask-note"></p>
     <p class="bad" id="ask-error"></p>
     <label class="check"><input type="checkbox" id="ask-off"> Don't show this box again</label>
@@ -48,7 +51,41 @@ export function start(id: number) {
             ? 'A video stream: its parts are downloaded and joined into one file, whose type is picked then.'
             : a.error ? `The server didn't answer properly: ${a.error} You can still try to download it.` : '';
         $<HTMLButtonElement>('ask-later').hidden = a.stream;
+        $('ask-same').hidden = !a.same;
+        $('ask-same-text').textContent = a.same === 'running'
+            ? `This link is already in the list, not finished yet: ${a.sameName}.`
+            : a.same === 'done' ? `You downloaded this link earlier: ${a.sameName}.` : '';
+        fit();
+        checkTarget();
     };
+
+    // Says whether the name is taken, and whether the file fits on the drive.
+    let checks = 0;
+    const checkTarget = async () => {
+        const n = ++checks;
+        const t = await CheckTarget(dir.value.trim(), name.value.trim()).catch(() => null);
+        if (n !== checks || !t) return;
+        $('ask-exists').hidden = !t.exists;
+        const need = info && !info.checking ? info.size : -1;
+        const short = need > 0 && t.free >= 0 && t.free < need;
+        $('ask-space').hidden = !short;
+        $('ask-space').textContent = short ? `Not enough space: this file needs ${size(need)}, and that drive has ${size(t.free)} free.` : '';
+        fit();
+    };
+    // Warnings make the box taller; the window grows to keep the buttons in view.
+    let asked = 0; // the height already asked for, while the window catches up
+    const fit = () => {
+        const want = document.documentElement.scrollHeight;
+        const over = want - Math.max(window.innerHeight, asked);
+        if (over <= 0) return;
+        asked = want;
+        GrowWindow(over).catch(() => {});
+    };
+    dir.addEventListener('input', checkTarget);
+    name.addEventListener('input', checkTarget);
+    $('ask-same-show').addEventListener('click', () => {
+        if (info?.sameId) ShowProgress(info.sameId).catch((e) => { err.textContent = msg(e); });
+    });
 
     let busy = false;
     const answer = async (later: boolean) => {
@@ -72,7 +109,10 @@ export function start(id: number) {
     $('ask-browse').addEventListener('click', async () => {
         try {
             const d = await ChooseFolder(dir.value);
-            if (d) dir.value = d;
+            if (d) {
+                dir.value = d;
+                checkTarget();
+            }
         } catch (e) {
             err.textContent = msg(e);
         }

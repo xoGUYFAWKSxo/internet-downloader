@@ -2,6 +2,8 @@ package main
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -78,5 +80,29 @@ func TestOptionsArg(t *testing.T) {
 		if got := optionsArg(strings.Fields(args)); got != want {
 			t.Errorf("%q: got %q, want %q", args, got, want)
 		}
+	}
+}
+
+func TestCheckTarget(t *testing.T) {
+	a := &App{}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "taken.zip"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.CheckTarget(dir, "taken.zip"); !got.Exists || got.Free <= 0 {
+		t.Errorf("taken name: %+v", got)
+	}
+	if got := a.CheckTarget(dir, "free.zip"); got.Exists || got.Free <= 0 {
+		t.Errorf("free name: %+v", got)
+	}
+	// A folder that isn't made yet still has a drive with free space.
+	if got := a.CheckTarget(filepath.Join(dir, "new", "folder"), "x.zip"); got.Exists || got.Free <= 0 {
+		t.Errorf("new folder: %+v", got)
+	}
+	if got := a.CheckTarget(dir, `..\taken.zip`); got.Exists {
+		t.Errorf("a name with a folder in it was looked up: %+v", got)
+	}
+	if got := a.CheckTarget("relative", "x"); got.Exists || got.Free != -1 {
+		t.Errorf("relative folder: %+v", got)
 	}
 }

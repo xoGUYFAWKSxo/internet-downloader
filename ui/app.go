@@ -247,6 +247,49 @@ func (a *App) OpenReleasesPage() error {
 	return nil
 }
 
+// Target is what the Download File Info box says about where a file would
+// go: whether a file of that name is already there, and the free space on
+// that drive (-1 when unknown).
+type Target struct {
+	Exists bool  `json:"exists"`
+	Free   int64 `json:"free"`
+}
+
+// CheckTarget looks at the folder and name chosen in the box.
+func (a *App) CheckTarget(dir, name string) Target {
+	t := Target{Free: -1}
+	if !filepath.IsAbs(dir) {
+		return t
+	}
+	if name != "" && filepath.Base(name) == name {
+		_, err := os.Lstat(filepath.Join(dir, name))
+		t.Exists = err == nil
+	}
+	// The folder may not exist yet; it is made on Start, so ask its drive.
+	for d := dir; ; d = filepath.Dir(d) {
+		var free uint64
+		p, err := windows.UTF16PtrFromString(d)
+		if err == nil && windows.GetDiskFreeSpaceEx(p, &free, nil, nil) == nil {
+			t.Free = int64(free)
+			break
+		}
+		if filepath.Dir(d) == d {
+			break
+		}
+	}
+	return t
+}
+
+// GrowWindow makes the window taller by px, for a box whose warnings no
+// longer fit.
+func (a *App) GrowWindow(px int) {
+	if px <= 0 || px > 400 {
+		return
+	}
+	w, h := runtime.WindowGetSize(a.ctx)
+	runtime.WindowSetSize(a.ctx, w, h+px)
+}
+
 // OptionsTab is the tab the Options window opened at, or "" in other
 // windows.
 func (a *App) OptionsTab() string { return a.options }

@@ -11,6 +11,7 @@ const PAGE = `
 <form class="ask opt" id="opt-form">
     <div class="tabs" role="tablist">
         <button type="button" data-tab="general">General</button>
+        <button type="button" data-tab="browser">Browser</button>
         <button type="button" data-tab="speed">Speed limiter</button>
         <button type="button" data-tab="queue">Queue</button>
         <button type="button" data-tab="scheduler">Scheduler</button>
@@ -23,6 +24,14 @@ const PAGE = `
         <label for="opt-dir">Download folder</label>
         <div class="ask-row"><input type="text" id="opt-dir" spellcheck="false"><button type="button" id="opt-browse">Browse…</button></div>
         <p class="note">The Download File Info box changes this to the folder you last saved into.</p>
+    </section>
+    <section data-panel="browser">
+        <label class="check">Take the browser's downloads of <input type="number" id="opt-min" min="1" max="1000000" step="1"> MB and larger</label>
+        <label for="opt-sites">Leave downloads from these sites to the browser (one per line)</label>
+        <textarea id="opt-sites" rows="3" spellcheck="false" placeholder="example.com"></textarea>
+        <label for="opt-types">Leave these file types to the browser</label>
+        <input type="text" id="opt-types" spellcheck="false" placeholder="pdf mp3">
+        <p class="note">A site covers its subdomains, and counts for the page you're on and the server the file comes from. Links you send with the right-click menu are always taken. The extension's own switch turns this off altogether.</p>
     </section>
     <section data-panel="speed">
         <label class="check"><input type="checkbox" id="opt-limit"> Limit download speed to
@@ -87,6 +96,9 @@ export function start(tab: string) {
         input('opt-dir').value = s.dir;
         input('opt-limit').checked = s.limit === '1';
         input('opt-kb').value = s.limitKB;
+        input('opt-min').value = s.catchMinMB;
+        $<HTMLTextAreaElement>('opt-sites').value = s.catchSites;
+        input('opt-types').value = s.catchTypes;
         input('opt-max').value = s.queueMax;
         input('opt-sched').checked = s.sched === '1';
         input('opt-start').value = s.schedStart;
@@ -125,6 +137,9 @@ export function start(tab: string) {
                 dir: input('opt-dir').value.trim(),
                 limit: on(input('opt-limit').checked),
                 limitKB: input('opt-kb').value.trim(),
+                catchMinMB: input('opt-min').value.trim(),
+                catchSites: $<HTMLTextAreaElement>('opt-sites').value,
+                catchTypes: input('opt-types').value,
                 queueMax: input('opt-max').value.trim(),
                 sched: on(sched),
                 schedStart: input('opt-start').value || saved,
@@ -139,7 +154,7 @@ export function start(tab: string) {
     $('opt-cancel').addEventListener('click', () => Quit());
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') Quit(); });
     document.addEventListener('contextmenu', (e) => {
-        if (!(e.target instanceof HTMLInputElement)) e.preventDefault();
+        if (!(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) e.preventDefault();
     });
     WindowSetTitle('Options');
 }

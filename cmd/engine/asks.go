@@ -55,12 +55,15 @@ const (
 	setSchedDays  = "schedDays"  // on these days: digits, 0 for Sunday
 	setUpdates    = "updates"    // "1": check once a day for a new version
 	setAwake      = "awake"      // "1": keep the computer awake while downloading
+	setCatchMin   = "catchMinMB" // browser downloads smaller than this many MB stay in the browser
+	setCatchSites = "catchSites" // and those from these sites, one per line
+	setCatchTypes = "catchTypes" // and these file types, space-separated extensions
 )
 
 var settingDefaults = map[string]string{
 	setAsk: "1", setDone: "1", setLimit: "0", setLimitKB: "1024", setQueueMax: "2",
 	setSched: "0", setSchedStart: "02:00", setSchedStop: "", setSchedDays: "0123456",
-	setUpdates: "1", setAwake: "1",
+	setUpdates: "1", setAwake: "1", setCatchMin: "1", setCatchSites: "", setCatchTypes: "",
 }
 
 func (e *engine) setting(key string) string {
@@ -84,7 +87,13 @@ func (e *engine) setSetting(key, value string) error {
 // saves all or nothing.
 func (e *engine) setSettings(m map[string]string) error {
 	for k, v := range m {
-		if err := checkSetting(k, v); err != nil {
+		if clean, ok := cleanSetting[k]; ok {
+			c, err := clean(v)
+			if err != nil {
+				return err
+			}
+			m[k] = c
+		} else if err := checkSetting(k, v); err != nil {
 			return err
 		}
 	}
@@ -120,6 +129,10 @@ func checkSetting(key, value string) error {
 	case setLimitKB:
 		if n, err := strconv.Atoi(value); err != nil || n < 1 || n > 1000000 {
 			return errors.New("The speed limit should be a whole number of KB/s, from 1 to 1000000.")
+		}
+	case setCatchMin:
+		if n, err := strconv.Atoi(value); err != nil || n < 1 || n > 1000000 {
+			return errors.New("The smallest size to take from the browser should be a whole number of MB, from 1 to 1000000.")
 		}
 	case setQueueMax:
 		if n, err := strconv.Atoi(value); err != nil || n < 1 || n > 10 {
@@ -187,6 +200,7 @@ func (e *engine) newAsk(c media.Context) uint64 {
 	} else {
 		a.info.Name, a.info.Checking = fileNameOf(c.URL), true
 	}
+	a.info.Same, a.info.SameID, a.info.SameName = e.sameLink(c.URL)
 	e.asks.mu.Lock()
 	if e.asks.m == nil {
 		e.asks.m = map[uint64]*ask{}
@@ -211,6 +225,29 @@ func (e *engine) newAsk(c media.Context) uint64 {
 		go e.checkAsk(a, request(c))
 	}
 	return id
+}
+
+// sameLink finds the newest download of address u still in the list:
+// "running" for one not finished (downloading, paused or queued), "done" for
+// a finished one, "" for none. Failed and cancelled ones don't count. The
+// list knows the addresses of downloads made since the app started, and of
+// unfinished ones from before.
+func (e *engine) sameLink(u string) (string, uint64, string) {
+	e.dl.mu.Lock()
+	defer e.dl.mu.Unlock()
+	for i := len(e.dl.jobs) - 1; i >= 0; i-- {
+		j := e.dl.jobs[i]
+		if j.from != u {
+			continue
+		}
+		switch {
+		case j.State == fetch.Done:
+			return "done", j.ID, j.Name
+		case isRunning(j.State) || j.State == fetch.Paused:
+			return "running", j.ID, j.Name
+		}
+	}
+	return "", 0, ""
 }
 
 func (e *engine) checkAsk(a *ask, r probe.Request) {

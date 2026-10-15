@@ -73,4 +73,9 @@ type AskInfo struct {
 	Stream bool   `json:"stream"`
 	Error  string `json:"error,omitempty"`
 	Dir    string `json:"dir"` // the folder offered
+	// Same is set when the list already has this link: "running" (still
+	// downloading or waiting) or "done", with that download's id and name.
+	Same     string `json:"same,omitempty"`
+	SameID   uint64 `json:"sameId,omitempty"`
+	SameName string `json:"sameName,omitempty"`
 }
