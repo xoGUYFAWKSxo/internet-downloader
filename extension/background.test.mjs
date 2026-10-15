@@ -266,3 +266,33 @@ test("right-click a link to download it", async () => {
   assert.equal(notes.at(-1).title, "Not sent");
   assert.equal(sent.length, before);
 });
+
+// Chrome and Edge: the download is held at the file-name step, so their
+// Save As box doesn't open for one the app takes. Last: it loads a second
+// copy of background.js, which sees the Chrome-only event.
+test("Chrome: no Save As box for downloads the app takes", async () => {
+  chrome.downloads.onDeterminingFilename = event();
+  await import("./src/background.js?chrome");
+  const settle = async () => { for (let i = 0; i < 8; i++) await tick(); };
+  const offer = async (d) => {
+    dl.length = 0;
+    let suggested = 0;
+    const kept = chrome.downloads.onDeterminingFilename.fire({ state: "in_progress", totalBytes: 80e6, ...d }, () => suggested++);
+    assert.deepEqual(kept, [true], "suggest is called later");
+    await settle();
+    return suggested;
+  };
+  reply = { ok: true, payload: { id: 6 } };
+  assert.equal(await offer({ id: 20, url: "https://dl.example/setup.exe" }), 0, "taken: Chrome is never told to go on");
+  assert.deepEqual(dl, [["cancel", 20], ["erase", 20]], "not paused, just dropped");
+  assert.equal(sent.at(-1).media.url, "https://dl.example/setup.exe");
+
+  reply = { ok: true, payload: { declined: true } };
+  assert.equal(await offer({ id: 21, url: "https://dl.example/notes.pdf", totalBytes: -1 }), 1, "declined: Chrome goes on");
+  assert.deepEqual(dl, []);
+  const before = sent.length;
+  assert.equal(await offer({ id: 22, url: "https://dl.example/icon.png", totalBytes: 2000 }), 1, "small: not offered");
+  assert.equal(await offer({ id: 23, url: "blob:https://site.example/1" }), 1);
+  assert.equal(sent.length, before);
+  reply = { ok: true, payload: { id: 1 } };
+});

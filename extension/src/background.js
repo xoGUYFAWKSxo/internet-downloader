@@ -332,8 +332,8 @@ async function linkClicked(info, tab) {
 }
 
 // Downloads the browser starts go to the app, unless the popup's switch is
-// off. The browser's download is paused while the app checks the server, then
-// cancelled once the app has it, or resumed when the app can't take it, so a
+// off. The browser's download waits while the app checks the server, then is
+// cancelled once the app has it, or goes on when the app can't take it, so a
 // download is never lost.
 const CATCH_KEY = "catchDownloads";
 let catchOn = true;
@@ -344,35 +344,74 @@ api.storage.onChanged?.addListener((changes, area) => {
   if (area === "local" && CATCH_KEY in changes) catchOn = changes[CATCH_KEY].newValue !== false;
 });
 
-async function catchDownload(d) {
-  // Firefox doesn't know the size yet when a download starts, and a fast one
-  // finishes within a fraction of a second. So pause at once, and let the app
-  // check the size (minSize) when the browser can't.
-  const size = d.totalBytes > 0 ? d.totalBytes : d.fileSize > 0 ? d.fileSize : 0;
-  if (!worthCatching(size ? d : { ...d, totalBytes: CATCH_MIN })) return;
+function knownSize(d) {
+  return d.totalBytes > 0 ? d.totalBytes : d.fileSize > 0 ? d.fileSize : 0;
+}
+
+// candidate says whether to offer a download to the app. A size the browser
+// doesn't know yet is left for the app to check (minSize).
+async function candidate(d) {
+  if (!worthCatching(knownSize(d) ? d : { ...d, totalBytes: CATCH_MIN })) return false;
   await catchReady;
-  if (!catchOn) return;
-  try {
-    await api.downloads.pause(d.id);
-  } catch {
-    return; // finished or failed already
-  }
+  return catchOn;
+}
+
+// offer sends a download to the app and returns true when the app took it;
+// the caller then drops the browser's copy.
+async function offer(d) {
   const name = fileName(d.finalUrl ?? d.url);
   const r = await toApp({ type: "file", media: await fileContext(d.url, d.referrer ?? "",
-    { contentType: d.mime ?? "", size: size || undefined, minSize: CATCH_MIN }) });
+    { contentType: d.mime ?? "", size: knownSize(d) || undefined, minSize: CATCH_MIN }) });
   if (r?.ok && !r.payload?.declined) {
-    await api.downloads.cancel(d.id).catch(() => {});
-    await api.downloads.erase({ id: d.id }).catch(() => {});
     if (!r.payload?.asked) notify("Downloading", name + ". Progress shows in the Galactic Downloader window.");
-    return;
+    return true;
   }
-  await giveBack(d);
   // Quiet when the file is small, or the app isn't installed or running, or
   // is too old for this: the browser just downloads as usual.
   if (!r?.ok && !r?.unreachable && !/^unknown message/i.test(r?.error ?? "")) {
     notify("The browser is downloading this", name + ": " + (r?.error ?? "No answer from the app."));
   }
+  return false;
 }
+
+async function drop(d) {
+  await api.downloads.cancel(d.id);
+  await api.downloads.erase({ id: d.id }).catch(() => {});
+}
+
+// Firefox: it doesn't know the size yet when a download starts, and a fast
+// one finishes within a fraction of a second. So pause at once, and let the
+// app check the size.
+async function catchDownload(d) {
+  if (!(await candidate(d))) return;
+  try {
+    await api.downloads.pause(d.id);
+  } catch {
+    return; // finished or failed already
+  }
+  if (await offer(d)) await drop(d).catch(() => {});
+  else await giveBack(d);
+}
+
+// Chrome and Edge ask extensions for the file name before they show their
+// Save As box (when the user has "Ask where to save each file" on). Holding
+// the answer until the app has decided means the box never opens for a
+// download the app takes. The browser keeps downloading meanwhile, and goes
+// on as usual with suggest() for everything else.
+function determining(d, suggest) {
+  (async () => {
+    let taken = false;
+    try {
+      taken = (await candidate(d)) && (await offer(d));
+      if (taken) await drop(d);
+    } catch {
+      taken = false;
+    }
+    if (!taken) suggest();
+  })();
+  return true; // suggest is called later
+}
+
 // giveBack lets the browser carry on with a download it paused for the app.
 // Firefox can't resume one paused before its first bytes arrived, so that one
 // starts again. A download this extension starts is never caught
@@ -388,7 +427,8 @@ async function giveBack(d) {
   } catch {}
 }
 
-api.downloads?.onCreated.addListener((d) => { catchDownload(d); });
+if (api.downloads?.onDeterminingFilename) api.downloads.onDeterminingFilename.addListener(determining);
+else api.downloads?.onCreated.addListener((d) => { catchDownload(d); });
 
 menus?.onClicked.addListener((info, tab) => { menuClicked(info, tab); });
 
