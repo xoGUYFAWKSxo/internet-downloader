@@ -42,6 +42,7 @@ jobs:
             dist/release/*.exe
             dist/release/*.zip
             dist/release/SHA256SUMS.txt
+            dist/release/store/*.zip
       - name: draft release
         if: github.ref_type == 'tag'
         shell: bash

@@ -8,19 +8,25 @@ import { fileURLToPath } from "node:url";
 
 const root = dirname(fileURLToPath(import.meta.url));
 export const targets = ["chrome", "firefox"];
+// chrome-store is the Chrome build without its "key", for the Chrome and
+// Edge stores: they give the extension its own ID and refuse a key.
+const variants = { "chrome-store": "chrome" };
 
 // version, when given, replaces the manifest's: browsers take 1 to 4
 // numbers with dots, so a release's "1.2.0" fits but "1.2.0-beta" doesn't.
 export function manifestFor(target, version) {
   const base = JSON.parse(readFileSync(join(root, "manifest.base.json"), "utf8"));
-  if (!targets.includes(target)) throw new Error(`unknown target ${target}`);
-  const overrides = base[target];
+  const from = variants[target] ?? target;
+  if (!targets.includes(from)) throw new Error(`unknown target ${target}`);
+  const overrides = base[from];
   for (const t of targets) delete base[t];
   if (version !== undefined) {
     if (!/^\d+(\.\d+){0,3}$/.test(version)) throw new Error(`bad version ${version}`);
     base.version = version;
   }
-  return { ...base, ...overrides };
+  const m = { ...base, ...overrides };
+  if (target !== from) delete m.key;
+  return m;
 }
 
 export function build(target, version) {

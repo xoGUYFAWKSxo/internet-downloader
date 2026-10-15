@@ -15,6 +15,7 @@ document.getElementById("check").addEventListener("click", async () => {
   const r = await api.runtime.sendMessage({ type: "ping" });
   if (r?.ok) show(status, true, "Connected. App version " + (r.payload?.version ?? "unknown") + ".");
   else show(status, false, r?.error ?? "No answer from the app.");
+  document.getElementById("get-app").hidden = !!r?.ok;
 });
 
 // Firefox lets the user turn off site access, so ask for it again if needed.
