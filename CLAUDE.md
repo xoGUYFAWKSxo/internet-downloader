@@ -50,6 +50,7 @@ powershell -File installer/build-release.ps1 -Version 0.1.0   # release into dis
 - Commit as `xoGUYFAWKSxo <206061236+xoGUYFAWKSxo@users.noreply.github.com>`. Never commit with a personal email address.
 - Commit messages: write them to a file and use `git commit -F`, in UTF-8 without a BOM.
 - Update `STATUS.md` when a PR merges. Add to `DECISIONS.md` when the user makes a choice.
+- Release notes on a draft: `gh release edit vX.Y.Z --notes-file FILE`, never an API PATCH without `tag_name`. That PATCH swaps the draft's tag for an `untagged-…` placeholder, and publishing then creates a stray tag at main's head (happened to 0.1.1-0.1.4). After the user publishes, check `gh api repos/xoGUYFAWKSxo/internet-downloader/releases/latest` names the new `vX.Y.Z`.
 
 ## Rules for engine code
 - Never report a download as complete unless every byte range is committed and the size (and checksum, when the server gives one) matches.
