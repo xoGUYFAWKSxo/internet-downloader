@@ -336,39 +336,58 @@ async function linkClicked(info, tab) {
 // cancelled once the app has it, or resumed when the app can't take it, so a
 // download is never lost.
 const CATCH_KEY = "catchDownloads";
-async function catching() {
-  const v = await api.storage.local?.get(CATCH_KEY).catch(() => ({}));
-  return v?.[CATCH_KEY] !== false;
-}
+let catchOn = true;
+// Kept in memory: a fast download can finish while storage is being read.
+const catchReady = Promise.resolve(api.storage.local?.get(CATCH_KEY))
+  .then((v) => { catchOn = v?.[CATCH_KEY] !== false; }, () => {});
+api.storage.onChanged?.addListener((changes, area) => {
+  if (area === "local" && CATCH_KEY in changes) catchOn = changes[CATCH_KEY].newValue !== false;
+});
 
 async function catchDownload(d) {
-  if (!(d.totalBytes > 0 || d.fileSize > 0) && worthCatching({ ...d, totalBytes: CATCH_MIN })) {
-    // A browser can start the download before it knows the size: look again.
-    await new Promise((r) => setTimeout(r, 1000));
-    d = (await api.downloads.search({ id: d.id }).catch(() => []))[0] ?? d;
-  }
-  if (!worthCatching(d) || !(await catching())) return;
+  // Firefox doesn't know the size yet when a download starts, and a fast one
+  // finishes within a fraction of a second. So pause at once, and let the app
+  // check the size (minSize) when the browser can't.
+  const size = d.totalBytes > 0 ? d.totalBytes : d.fileSize > 0 ? d.fileSize : 0;
+  if (!worthCatching(size ? d : { ...d, totalBytes: CATCH_MIN })) return;
+  await catchReady;
+  if (!catchOn) return;
   try {
     await api.downloads.pause(d.id);
   } catch {
     return; // finished or failed already
   }
   const name = fileName(d.finalUrl ?? d.url);
-  const size = d.totalBytes > 0 ? d.totalBytes : d.fileSize;
-  const r = await toApp({ type: "file", media: await fileContext(d.url, d.referrer ?? "", { contentType: d.mime ?? "", size }) });
-  if (r?.ok) {
+  const r = await toApp({ type: "file", media: await fileContext(d.url, d.referrer ?? "",
+    { contentType: d.mime ?? "", size: size || undefined, minSize: CATCH_MIN }) });
+  if (r?.ok && !r.payload?.declined) {
     await api.downloads.cancel(d.id).catch(() => {});
     await api.downloads.erase({ id: d.id }).catch(() => {});
     if (!r.payload?.asked) notify("Downloading", name + ". Progress shows in the Galactic Downloader window.");
     return;
   }
-  await api.downloads.resume(d.id).catch(() => {});
-  // Quiet when the app isn't installed or running, or is too old for this:
-  // the browser just downloads as usual.
-  if (!r?.unreachable && !/^unknown message/i.test(r?.error ?? "")) {
+  await giveBack(d);
+  // Quiet when the file is small, or the app isn't installed or running, or
+  // is too old for this: the browser just downloads as usual.
+  if (!r?.ok && !r?.unreachable && !/^unknown message/i.test(r?.error ?? "")) {
     notify("The browser is downloading this", name + ": " + (r?.error ?? "No answer from the app."));
   }
 }
+// giveBack lets the browser carry on with a download it paused for the app.
+// Firefox can't resume one paused before its first bytes arrived, so that one
+// starts again. A download this extension starts is never caught
+// (worthCatching skips byExtensionId), so this can't loop.
+async function giveBack(d) {
+  try {
+    await api.downloads.resume(d.id);
+    return;
+  } catch {}
+  try {
+    await api.downloads.download({ url: d.url });
+    await api.downloads.erase({ id: d.id }).catch(() => {});
+  } catch {}
+}
+
 api.downloads?.onCreated.addListener((d) => { catchDownload(d); });
 
 menus?.onClicked.addListener((info, tab) => { menuClicked(info, tab); });

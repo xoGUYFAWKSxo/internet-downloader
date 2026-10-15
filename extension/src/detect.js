@@ -126,8 +126,8 @@ export const CATCH_MIN = 1 << 20;
 // worthCatching says whether a download the browser just started should go
 // to the app. It stays with the browser when the app can't fetch it the same
 // way (blob:, data: and file: addresses, private windows, other extensions'
-// downloads), and when it's small or its size is unknown: those are mostly
-// files a page builds on the fly.
+// downloads), and when it's small. A download whose size the browser doesn't
+// know yet is checked with a size of CATCH_MIN; the app then checks the size.
 export function worthCatching(d) {
   if (!/^https?:\/\//i.test(d.url ?? "")) return false;
   if (d.incognito || d.byExtensionId) return false;

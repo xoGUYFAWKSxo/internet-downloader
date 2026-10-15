@@ -215,6 +215,27 @@ func TestFileFromBrowser(t *testing.T) {
 	if n := len(e.inbox.Summaries()); n != 0 {
 		t.Fatalf("refused files were added: %d", n)
 	}
+	// Firefox doesn't know the size yet: the app checks it, and declines
+	// small files quietly so the browser keeps them.
+	for _, min := range []int{1<<20 + 1, 0} {
+		r := e.handle(ext(fmt.Sprintf(`{"type":"file","media":{"url":%q,"kind":"file","minSize":%d}}`, s.H1Range, min)))
+		if min > 0 && (r.Type != "file.declined" || r.Error != "") {
+			t.Fatalf("too small: %+v", r)
+		}
+		if min == 0 && r.Type != "media.download" {
+			t.Fatalf("no minimum: %+v", r)
+		}
+	}
+	<-stopped
+	unknown := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.(http.Flusher).Flush() // no Content-Length: size unknown
+		w.Write(make([]byte, 2<<20))
+	}))
+	t.Cleanup(unknown.Close)
+	if r := e.handle(ext(`{"type":"file","media":{"url":"` + unknown.URL + `/x.bin","kind":"file","minSize":1048576}}`)); r.Type != "file.declined" {
+		t.Fatalf("unknown size: %+v", r)
+	}
+
 	// A link from the right-click menu has no type or size; a page is fine then.
 	if r := file(page.URL+"/notes.html", "", 0); r.Type != "media.download" {
 		t.Fatalf("link to a page: %+v", r)
