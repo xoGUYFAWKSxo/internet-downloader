@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -58,11 +59,15 @@ type engine struct {
 	limit *fetch.Limiter
 	// q is the queue's state; e.dl.mu guards it.
 	q queueState
+	// version is this app's; upd is what the update check found.
+	version string
+	upd     updates
 }
 
 func newEngine(log io.Writer) *engine {
 	return &engine{inbox: media.NewInbox(100), log: log, now: time.Now, dir: downloadDir(), ffmpeg: stream.FFmpeg(),
-		retries: []time.Duration{5 * time.Second, 15 * time.Second, 45 * time.Second}, checkpointEvery: 3 * time.Second, limit: fetch.NewLimiter()}
+		retries: []time.Duration{5 * time.Second, 15 * time.Second, 45 * time.Second}, checkpointEvery: 3 * time.Second, limit: fetch.NewLimiter(),
+		version: version.Version, upd: updates{url: latestRelease, client: &http.Client{}}}
 }
 
 type idRequest struct {
@@ -253,6 +258,9 @@ func (e *engine) handle(m ipc.Message) ipc.Message {
 			return fail(err.Error())
 		}
 		return ipc.Message{Type: "queue.move"}
+	case "update.get":
+		// version is "" when this is the latest, or the check is off or failed.
+		return ipc.Message{Type: "update.get", Payload: payload(map[string]string{"version": e.newerVersion(), "page": releasesPage})}
 	case "settings.get":
 		return ipc.Message{Type: "settings.get", Payload: payload(e.settings())}
 	case "settings.set":

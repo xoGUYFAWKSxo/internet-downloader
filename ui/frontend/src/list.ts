@@ -1,4 +1,4 @@
-import {AddToQueue, AddURL, CheckEngine, CheckServer, Download, Downloads, MoveInQueue, OpenFile, PauseDownload, QueueInfo, ReceivedMedia, RemoveDownloads, RemoveFromQueue, ResumeDownload, ShowInFolder, ShowOptions, ShowProgress, StartQueue, StopQueue} from '../wailsjs/go/main/App';
+import {AddToQueue, AddURL, CheckEngine, CheckServer, Download, Downloads, MoveInQueue, NewerVersion, OpenFile, OpenReleasesPage, PauseDownload, QueueInfo, ReceivedMedia, RemoveDownloads, RemoveFromQueue, ResumeDownload, ShowInFolder, ShowOptions, ShowProgress, StartQueue, StopQueue} from '../wailsjs/go/main/App';
 import {ClipboardGetText} from '../wailsjs/runtime/runtime';
 import {$, duration, el, msg, percent, size} from './util';
 
@@ -726,5 +726,17 @@ async function startDownload(id: number, btn: HTMLButtonElement) {
 renderHead();
 setView(view);
 checkEngine();
+const updateBtn = $<HTMLButtonElement>('update');
+updateBtn.addEventListener('click', () => OpenReleasesPage().catch((e) => notice(msg(e))));
+
+// The engine checks once a day; asking it is cheap.
+async function checkUpdate() {
+    const v = await NewerVersion().catch(() => '');
+    updateBtn.hidden = !v;
+    updateBtn.textContent = v ? `Version ${v} is available` : '';
+}
+
+checkUpdate();
+setInterval(checkUpdate, 60000);
 setInterval(refreshMedia, 3000);
 setInterval(refreshDownloads, 1000);

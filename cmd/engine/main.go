@@ -71,6 +71,8 @@ func main() {
 	}
 	e.applyLimit()
 	go e.runScheduler()
+	go e.checkUpdates(time.Minute, 24*time.Hour)
+	go e.keepAwake(15*time.Second, stayAwake, nil)
 	served := make(chan error, 1)
 	go func() { served <- ipc.Serve(l, e.handle) }()
 	runTray(e, l, served)

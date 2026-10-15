@@ -29,7 +29,11 @@ export function Downloads():Promise<Array<fetch.Status>>;
 
 export function MoveInQueue(arg1:number,arg2:number):Promise<void>;
 
+export function NewerVersion():Promise<string>;
+
 export function OpenFile(arg1:string):Promise<void>;
+
+export function OpenReleasesPage():Promise<void>;
 
 export function OptionsTab():Promise<string>;
 

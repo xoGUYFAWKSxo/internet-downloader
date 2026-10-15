@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +30,7 @@ func TestTrayText(t *testing.T) {
 // engine exits.
 func TestStopAll(t *testing.T) {
 	e := newEngine(io.Discard)
+	finished := filepath.Join(t.TempDir(), "3.bin")
 	block := func(ctx context.Context, j *job) {
 		<-ctx.Done()
 		time.Sleep(20 * time.Millisecond) // cleanup takes a moment
@@ -36,7 +38,7 @@ func TestStopAll(t *testing.T) {
 	}
 	e.start("https://a.test/1", nil, block)
 	e.start("https://a.test/2", nil, block)
-	e.start("https://a.test/3", nil, func(_ context.Context, j *job) { e.done(j, "3.bin", 1) })
+	e.start("https://a.test/3", nil, func(_ context.Context, j *job) { e.done(j, finished, 1) })
 	for end := time.Now().Add(time.Second); e.running() != 2 && time.Now().Before(end); {
 		time.Sleep(5 * time.Millisecond)
 	}

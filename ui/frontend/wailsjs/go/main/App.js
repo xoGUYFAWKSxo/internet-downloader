@@ -50,8 +50,16 @@ export function MoveInQueue(arg1, arg2) {
   return window['go']['main']['App']['MoveInQueue'](arg1, arg2);
 }
 
+export function NewerVersion() {
+  return window['go']['main']['App']['NewerVersion']();
+}
+
 export function OpenFile(arg1) {
   return window['go']['main']['App']['OpenFile'](arg1);
+}
+
+export function OpenReleasesPage() {
+  return window['go']['main']['App']['OpenReleasesPage']();
 }
 
 export function OptionsTab() {

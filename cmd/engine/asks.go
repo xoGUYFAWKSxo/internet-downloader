@@ -53,11 +53,14 @@ const (
 	setSchedStart = "schedStart" // at this time, "15:04"
 	setSchedStop  = "schedStop"  // and stops it at this one, or ""
 	setSchedDays  = "schedDays"  // on these days: digits, 0 for Sunday
+	setUpdates    = "updates"    // "1": check once a day for a new version
+	setAwake      = "awake"      // "1": keep the computer awake while downloading
 )
 
 var settingDefaults = map[string]string{
 	setAsk: "1", setDone: "1", setLimit: "0", setLimitKB: "1024", setQueueMax: "2",
 	setSched: "0", setSchedStart: "02:00", setSchedStop: "", setSchedDays: "0123456",
+	setUpdates: "1", setAwake: "1",
 }
 
 func (e *engine) setting(key string) string {
@@ -106,7 +109,7 @@ func (e *engine) setSettings(m map[string]string) error {
 
 func checkSetting(key, value string) error {
 	switch key {
-	case setAsk, setDone, setLimit, setSched:
+	case setAsk, setDone, setLimit, setSched, setUpdates, setAwake:
 		if value != "0" && value != "1" {
 			return errors.New("invalid setting value")
 		}

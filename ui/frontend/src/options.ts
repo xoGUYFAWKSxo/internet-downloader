@@ -18,6 +18,8 @@ const PAGE = `
     <section data-panel="general">
         <label class="check"><input type="checkbox" id="opt-ask"> Show the Download File Info box for links from the browser and Add URL</label>
         <label class="check"><input type="checkbox" id="opt-done"> Show a box when a download finishes</label>
+        <label class="check"><input type="checkbox" id="opt-awake"> Keep the computer awake while downloading</label>
+        <label class="check"><input type="checkbox" id="opt-updates"> Check once a day for a new version of the app</label>
         <label for="opt-dir">Download folder</label>
         <div class="ask-row"><input type="text" id="opt-dir" spellcheck="false"><button type="button" id="opt-browse">Browse…</button></div>
         <p class="note">The Download File Info box changes this to the folder you last saved into.</p>
@@ -80,6 +82,8 @@ export function start(tab: string) {
         saved = s.schedStart;
         input('opt-ask').checked = s.ask === '1';
         input('opt-done').checked = s.done === '1';
+        input('opt-awake').checked = s.awake === '1';
+        input('opt-updates').checked = s.updates === '1';
         input('opt-dir').value = s.dir;
         input('opt-limit').checked = s.limit === '1';
         input('opt-kb').value = s.limitKB;
@@ -116,6 +120,8 @@ export function start(tab: string) {
             await SaveSettings({
                 ask: on(input('opt-ask').checked),
                 done: on(input('opt-done').checked),
+                awake: on(input('opt-awake').checked),
+                updates: on(input('opt-updates').checked),
                 dir: input('opt-dir').value.trim(),
                 limit: on(input('opt-limit').checked),
                 limitKB: input('opt-kb').value.trim(),
