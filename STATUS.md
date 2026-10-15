@@ -119,5 +119,9 @@ Releases also build `store/GalacticDownloader-X.Y.Z-chrome-store.zip` (the Chrom
 
 The app and extension are called Galactic Downloader from 0.1.2 (0.1.0 and 0.1.1 were Internet Downloader). Only the names people see changed; the IDs, data folder and repository keep the old name (DECISIONS.md, 2026-10-15). An upgrade stays in `%LOCALAPPDATA%\Programs\Internet Downloader` and swaps the shortcuts for the new name. From 0.1.3 the Firefox add-on ID is `galactic-downloader@xoguyfawksxo` (the old one is lost on Firefox Add-ons).
 
+## Icon and store images
+
+The icon is a Milky Way-style galaxy (`docs/store-assets/galaxy.py`), in the window, tray, installer and extension. Store screenshots, Chrome's promo tile and Edge's logo are in `docs/store-assets/`. The Firefox submission (0.1.3) still has the old arrow icon; the next extension version brings the galaxy.
+
 ## Not done yet
 Resuming streams (HLS/DASH). The received-streams list is still in memory only, so it empties when the engine restarts.
