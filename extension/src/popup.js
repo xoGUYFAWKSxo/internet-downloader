@@ -13,10 +13,18 @@ document.getElementById("check").addEventListener("click", async () => {
   status.className = "";
   status.textContent = "Checking…";
   const r = await api.runtime.sendMessage({ type: "ping" });
-  if (r?.ok) show(status, true, "Connected. App version " + (r.payload?.version ?? "unknown") + ".");
+  if (r?.ok) {
+    let text = "Connected. App version " + (r.payload?.version ?? "unknown") + ".";
+    if (!r.payload?.features?.includes("file")) text += " Update the app to send the browser's downloads to it.";
+    show(status, true, text);
+  }
   else show(status, false, r?.error ?? "No answer from the app.");
   document.getElementById("get-app").hidden = !!r?.ok;
 });
+
+const catchBox = document.getElementById("catch");
+api.storage.local.get("catchDownloads").then((v) => { catchBox.checked = v.catchDownloads !== false; }, () => {});
+catchBox.addEventListener("change", () => { api.storage.local.set({ catchDownloads: catchBox.checked }).catch(() => {}); });
 
 // Firefox lets the user turn off site access, so ask for it again if needed.
 async function checkPermission() {

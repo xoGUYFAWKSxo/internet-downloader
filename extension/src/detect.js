@@ -118,3 +118,20 @@ export function dedupeCookies(list) {
   for (const c of list) seen.set(`${c.name}\u0000${c.domain}\u0000${c.path}`, c);
   return [...seen.values()];
 }
+
+// Downloads smaller than this stay with the browser: page images, small
+// documents and the like aren't worth a second request.
+export const CATCH_MIN = 1 << 20;
+
+// worthCatching says whether a download the browser just started should go
+// to the app. It stays with the browser when the app can't fetch it the same
+// way (blob:, data: and file: addresses, private windows, other extensions'
+// downloads), and when it's small or its size is unknown: those are mostly
+// files a page builds on the fly.
+export function worthCatching(d) {
+  if (!/^https?:\/\//i.test(d.url ?? "")) return false;
+  if (d.incognito || d.byExtensionId) return false;
+  if (d.state && d.state !== "in_progress") return false;
+  const size = d.totalBytes > 0 ? d.totalBytes : d.fileSize > 0 ? d.fileSize : 0;
+  return size >= CATCH_MIN;
+}

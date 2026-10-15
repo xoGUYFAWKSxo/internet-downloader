@@ -9,7 +9,8 @@
     "cookies",
     "storage",
     "contextMenus",
-    "notifications"
+    "notifications",
+    "downloads"
   ],
   "icons": {
     "128": "icon.png"

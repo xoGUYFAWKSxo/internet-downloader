@@ -15,12 +15,27 @@ const cookieQueries = [];
 const menuItems = new Map();
 const notes = [];
 let popups = 0;
+const local = {};
+const dl = [];
+const found = [];
+let pauseFails = false;
 globalThis.chrome = {
   storage: { session: {
     get: async () => ({ ...session }),
     set: async (o) => Object.assign(session, o),
     remove: async (k) => delete session[k],
+  }, local: {
+    get: async (k) => (k in local ? { [k]: local[k] } : {}),
+    set: async (o) => Object.assign(local, o),
   } },
+  downloads: {
+    onCreated: event(),
+    pause: async (id) => { if (pauseFails) throw new Error("not in progress"); dl.push(["pause", id]); },
+    resume: async (id) => { dl.push(["resume", id]); },
+    cancel: async (id) => { dl.push(["cancel", id]); },
+    erase: async (q) => { dl.push(["erase", q.id]); },
+    search: async (q) => found.filter((d) => d.id === q.id),
+  },
   action: {
     setBadgeText: async ({ tabId, text }) => { badges[tabId] = text; },
     openPopup: async () => { popups++; },
@@ -166,4 +181,80 @@ test("right-click menu downloads the clicked or playing video", async () => {
   await click("download-media", "blob:https://site.example/1");
   assert.equal(notes.at(-1).title, "Nothing to download yet");
   assert.equal(menuItems.get("download-playing").visible, false);
+});
+
+test("downloads the browser starts go to the app", async () => {
+  const settle = async () => { for (let i = 0; i < 8; i++) await tick(); };
+  const start = async (d) => {
+    dl.length = 0;
+    chrome.downloads.onCreated.fire({ state: "in_progress", mime: "application/x-msdownload", totalBytes: 80e6,
+      referrer: "https://site.example/get", ...d });
+    await settle();
+  };
+  reply = { ok: true, payload: { id: 3 } };
+  await start({ id: 1, url: "https://dl.example/setup.exe" });
+  let m = sent.at(-1);
+  assert.equal(m.type, "file");
+  assert.deepEqual([m.media.url, m.media.kind, m.media.size, m.media.contentType, m.media.referer],
+    ["https://dl.example/setup.exe", "file", 80e6, "application/x-msdownload", "https://site.example/get"]);
+  assert.deepEqual(m.media.cookies.map((c) => c.name), ["sid"]);
+  assert.deepEqual(dl, [["pause", 1], ["cancel", 1], ["erase", 1]], "paused while the app checks, then removed");
+  assert.equal(notes.at(-1).title, "Downloading");
+
+  // The app can't fetch it: the browser carries on, and says why.
+  reply = { ok: false, error: "The server sent the app a web page instead of the file." };
+  await start({ id: 2, url: "https://dl.example/report" });
+  assert.deepEqual(dl, [["pause", 2], ["resume", 2]]);
+  assert.equal(notes.at(-1).title, "The browser is downloading this");
+
+  // An older app, or none: the browser carries on without a notice.
+  const n = notes.length;
+  for (const r of [{ ok: false, error: "unknown message from the browser: file" }, { ok: false, unreachable: true, error: "Can't reach" }]) {
+    reply = r;
+    await start({ id: 3, url: "https://dl.example/setup.exe" });
+    assert.deepEqual(dl, [["pause", 3], ["resume", 3]]);
+  }
+  assert.equal(notes.length, n);
+
+  // The size wasn't known yet when the download started.
+  reply = { ok: true, payload: { id: 4 } };
+  found.push({ id: 8, url: "https://dl.example/big.iso", state: "in_progress", totalBytes: 4e9 });
+  chrome.downloads.onCreated.fire({ id: 8, url: "https://dl.example/big.iso", state: "in_progress", totalBytes: -1 });
+  await new Promise((r) => setTimeout(r, 1100));
+  await settle();
+  assert.equal(sent.at(-1).media.url, "https://dl.example/big.iso");
+  assert.equal(sent.at(-1).media.size, 4e9);
+
+  // Small, private, or switched off: not touched.
+  const before = sent.length;
+  await start({ id: 4, url: "https://dl.example/icon.png", totalBytes: 2000 });
+  await start({ id: 5, url: "https://dl.example/setup.exe", incognito: true });
+  local.catchDownloads = false;
+  await start({ id: 6, url: "https://dl.example/setup.exe" });
+  delete local.catchDownloads;
+  // Finished before it could be paused.
+  pauseFails = true;
+  await start({ id: 7, url: "https://dl.example/setup.exe" });
+  pauseFails = false;
+  assert.equal(sent.length, before);
+  reply = { ok: true, payload: { id: 1 } };
+});
+
+test("right-click a link to download it", async () => {
+  assert.deepEqual(menuItems.get("download-link").contexts, ["link"]);
+  const click = async (linkUrl, tab = { id: 7, url: "https://site.example/files", title: "Files" }) => {
+    chrome.contextMenus.onClicked.fire({ menuItemId: "download-link", linkUrl }, tab);
+    for (let i = 0; i < 8; i++) await tick();
+  };
+  await click("https://dl.example/tool.zip");
+  const m = sent.at(-1);
+  assert.deepEqual([m.type, m.media.url, m.media.kind, m.media.referer, m.media.pageTitle],
+    ["file", "https://dl.example/tool.zip", "file", "https://site.example/files", "Files"]);
+  assert.equal(notes.at(-1).title, "Downloading");
+  const before = sent.length;
+  await click("javascript:void(0)");
+  assert.equal(notes.at(-1).title, "Couldn't download");
+  await click("https://dl.example/tool.zip", { id: 8, url: "https://site.example/files", incognito: true });
+  assert.equal(notes.at(-1).title, "Not sent");
+  assert.equal(sent.length, before);
 });

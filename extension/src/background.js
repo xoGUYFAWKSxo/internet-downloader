@@ -1,7 +1,7 @@
 // Watches each tab's network requests for media streams and, when the user
 // asks, sends one to the app with everything needed to fetch it the way the
 // browser did. All native messaging goes through here.
-import { classify, isSegment, headerMap, totalSize, replayHeaders, worthListing, toCookie, dedupeCookies } from "./detect.js";
+import { classify, isSegment, headerMap, totalSize, replayHeaders, worthListing, toCookie, dedupeCookies, fileName, worthCatching, CATCH_MIN } from "./detect.js";
 import { parseHLS, parseDASH, sniffMP4, findMoov, fileInfo, pick, playlistFor, describe, SNIFF_BYTES, MAX_MOOV } from "./describe.js";
 
 const api = globalThis.browser ?? globalThis.chrome;
@@ -15,7 +15,7 @@ async function toApp(message) {
     return await api.runtime.sendNativeMessage(HOST, message);
   } catch (err) {
     // Thrown when the relay isn't registered for this browser or exits early.
-    return { ok: false, error: "Can't reach the Galactic Downloader app. Is it installed? (" + err.message + ")" };
+    return { ok: false, unreachable: true, error: "Can't reach the Galactic Downloader app. Is it installed? (" + err.message + ")" };
   }
 }
 
@@ -249,6 +249,7 @@ async function sendItem(tabId, item, type) {
 const menus = api.contextMenus ?? api.menus;
 const MENU_MEDIA = "download-media";
 const MENU_PAGE = "download-playing";
+const MENU_LINK = "download-link";
 
 // Menus survive the background stopping, so they're made on install and
 // browser start. Promises throughout: Firefox's browser.* takes no callbacks.
@@ -258,6 +259,7 @@ async function createMenu() {
   menus.create({ id: MENU_MEDIA, title: "Download this with Galactic Downloader", contexts: ["video", "audio"] });
   menus.create({ id: MENU_PAGE, title: "Download the playing video with Galactic Downloader",
     contexts: ["page", "frame", "link", "image"], visible: false });
+  menus.create({ id: MENU_LINK, title: "Download link with Galactic Downloader", contexts: ["link"] });
   menuShown = false;
   updateMenu();
 }
@@ -283,6 +285,7 @@ function notify(title, message) {
 
 async function menuClicked(info, tab) {
   if (!tab || tab.id < 0) return;
+  if (info.menuItemId === MENU_LINK) return linkClicked(info, tab);
   await ready;
   const items = [...(tabs.get(tab.id)?.values() ?? [])];
   const choice = pick(items, info.menuItemId === MENU_MEDIA ? info.srcUrl : "");
@@ -306,6 +309,68 @@ async function menuClicked(info, tab) {
   if (r?.ok) { if (!r.payload?.asked) notify("Downloading", (choice.title ?? "Video") + ". Progress shows in the Galactic Downloader window."); }
   else notify("Couldn't download", r?.error ?? "No answer from the app.");
 }
+// fileContext is what the app needs to fetch a file the way the browser
+// would. The browser doesn't say which headers it sent for a download; the
+// Referer and cookies are what servers check.
+async function fileContext(url, referer, extra) {
+  return { url, kind: "file", referer, pageUrl: referer, headers: {}, cookies: await cookiesFor(url), ...extra };
+}
+
+async function linkClicked(info, tab) {
+  if (tab.incognito) {
+    notify("Not sent", "Galactic Downloader doesn't take downloads from private windows.");
+    return;
+  }
+  const url = info.linkUrl ?? "";
+  if (!/^https?:\/\//i.test(url)) {
+    notify("Couldn't download", "That link isn't a web address the app can download.");
+    return;
+  }
+  const r = await toApp({ type: "file", media: await fileContext(url, tab.url ?? "", { pageTitle: tab.title ?? "" }) });
+  if (r?.ok) { if (!r.payload?.asked) notify("Downloading", fileName(url) + ". Progress shows in the Galactic Downloader window."); }
+  else notify("Couldn't download", r?.error ?? "No answer from the app.");
+}
+
+// Downloads the browser starts go to the app, unless the popup's switch is
+// off. The browser's download is paused while the app checks the server, then
+// cancelled once the app has it, or resumed when the app can't take it, so a
+// download is never lost.
+const CATCH_KEY = "catchDownloads";
+async function catching() {
+  const v = await api.storage.local?.get(CATCH_KEY).catch(() => ({}));
+  return v?.[CATCH_KEY] !== false;
+}
+
+async function catchDownload(d) {
+  if (!(d.totalBytes > 0 || d.fileSize > 0) && worthCatching({ ...d, totalBytes: CATCH_MIN })) {
+    // A browser can start the download before it knows the size: look again.
+    await new Promise((r) => setTimeout(r, 1000));
+    d = (await api.downloads.search({ id: d.id }).catch(() => []))[0] ?? d;
+  }
+  if (!worthCatching(d) || !(await catching())) return;
+  try {
+    await api.downloads.pause(d.id);
+  } catch {
+    return; // finished or failed already
+  }
+  const name = fileName(d.finalUrl ?? d.url);
+  const size = d.totalBytes > 0 ? d.totalBytes : d.fileSize;
+  const r = await toApp({ type: "file", media: await fileContext(d.url, d.referrer ?? "", { contentType: d.mime ?? "", size }) });
+  if (r?.ok) {
+    await api.downloads.cancel(d.id).catch(() => {});
+    await api.downloads.erase({ id: d.id }).catch(() => {});
+    if (!r.payload?.asked) notify("Downloading", name + ". Progress shows in the Galactic Downloader window.");
+    return;
+  }
+  await api.downloads.resume(d.id).catch(() => {});
+  // Quiet when the app isn't installed or running, or is too old for this:
+  // the browser just downloads as usual.
+  if (!r?.unreachable && !/^unknown message/i.test(r?.error ?? "")) {
+    notify("The browser is downloading this", name + ": " + (r?.error ?? "No answer from the app."));
+  }
+}
+api.downloads?.onCreated.addListener((d) => { catchDownload(d); });
+
 menus?.onClicked.addListener((info, tab) => { menuClicked(info, tab); });
 
 api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {

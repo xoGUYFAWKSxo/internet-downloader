@@ -6,11 +6,12 @@ Galactic Downloader (the Windows app and its browser extension for Chrome, Edge 
 
 - **The addresses of requests the browser makes** on the pages you visit, to spot video and audio files and HLS/DASH playlists. For each tab it keeps a list of at most 50 items found, with the request headers needed to download them again, in the browser's session storage: in memory only, cleared when the browser closes.
 - **Playlists and the start of video files** it has spotted, fetched from the same site with the browser's cookies, as the page's own player does, to describe each item in its popup (for example "Video with sound · up to 1080p").
-- **The site's cookies for an item**, only when you choose to download it.
+- **Files the browser starts downloading**: their address, the page that linked to them, their type and size. Files of 1 MB and larger, outside private windows, are handed to the app (see below) unless you turn that off in the popup. Smaller ones, and ones in private windows, are left alone.
+- **The site's cookies for an item**, only when it is sent to the app.
 
 ## What it sends, and where
 
-When you choose to download something (with the popup's buttons or the right-click menu), the extension sends the item's address, the page it came from, the request headers it needs, the site's cookies for it, and for streams the playlist text, to the Galactic Downloader app **on the same computer**, through the browser's native messaging. It sends nothing anywhere else.
+When you choose to download something (with the popup's buttons or the right-click menu), or the browser starts downloading a file of 1 MB or larger, the extension sends the item's address, the page it came from, the request headers it needs, the site's cookies for it, and for streams the playlist text, to the Galactic Downloader app **on the same computer**, through the browser's native messaging. It sends nothing anywhere else.
 
 ## What the app does with it
 
