@@ -9,8 +9,8 @@ func TestCallerFromArgs(t *testing.T) {
 	}{
 		{[]string{"chrome-extension://abcdefghijklmnopabcdefghijklmnop/", "--parent-window=0"},
 			caller{"chromium", "abcdefghijklmnopabcdefghijklmnop"}},
-		{[]string{`C:\Users\x\AppData\Local\InternetDownloader\firefox-host.json`, "internet-downloader@xoguyfawksxo"},
-			caller{"firefox", "internet-downloader@xoguyfawksxo"}},
+		{[]string{`C:\Users\x\AppData\Local\InternetDownloader\firefox-host.json`, "galactic-downloader@xoguyfawksxo"},
+			caller{"firefox", "galactic-downloader@xoguyfawksxo"}},
 		{nil, caller{Browser: "unknown"}},
 		{[]string{"something-else"}, caller{Browser: "unknown"}},
 	}

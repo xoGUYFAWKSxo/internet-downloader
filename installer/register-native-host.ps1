@@ -16,7 +16,7 @@ param(
     # fixed by the "key" in extension/manifest.base.json, for a hand-loaded
     # extension; the Chrome Web Store and Edge Add-ons give theirs their own.
     [string[]]$ChromeExtensionIds = @('akmjpphfkcdejdhhobbbnbddgdbajpem'),
-    [string]$FirefoxExtensionId = 'internet-downloader@xoguyfawksxo',
+    [string]$FirefoxExtensionId = 'galactic-downloader@xoguyfawksxo',
     [ValidateSet('Chrome', 'Edge', 'Firefox')]
     [string[]]$Browsers = @('Chrome', 'Edge', 'Firefox'),
     [switch]$Unregister,
