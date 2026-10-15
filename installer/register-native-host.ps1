@@ -12,8 +12,10 @@ for the current user. No admin rights needed; everything goes under HKCU and
 #>
 param(
     [string]$HostPath = (Join-Path $PSScriptRoot '..\bin\nmhost.exe'),
-    # Fixed by the "key" in extension/manifest.base.json; Chrome and Edge share it.
-    [string]$ChromeExtensionId = 'akmjpphfkcdejdhhobbbnbddgdbajpem',
+    # Every Chrome and Edge extension ID allowed to use the relay. The first is
+    # fixed by the "key" in extension/manifest.base.json, for a hand-loaded
+    # extension; the Chrome Web Store and Edge Add-ons give theirs their own.
+    [string[]]$ChromeExtensionIds = @('akmjpphfkcdejdhhobbbnbddgdbajpem'),
     [string]$FirefoxExtensionId = 'internet-downloader@xoguyfawksxo',
     [ValidateSet('Chrome', 'Edge', 'Firefox')]
     [string[]]$Browsers = @('Chrome', 'Edge', 'Firefox'),
@@ -74,8 +76,8 @@ New-Item -ItemType Directory -Path $ManifestDir -Force | Out-Null
 
 $chromium = @($Browsers | Where-Object { $_ -ne 'Firefox' })
 if ($chromium.Count -gt 0) {
-    if (-not $ChromeExtensionId) {
-        Write-Warning "Skipping $($chromium -join ', '): pass -ChromeExtensionId (shown on chrome://extensions)."
+    if (-not $ChromeExtensionIds) {
+        Write-Warning "Skipping $($chromium -join ', '): pass -ChromeExtensionIds (shown on chrome://extensions)."
     } else {
         $m = Join-Path $ManifestDir 'chromium-host.json'
         Write-JsonNoBom $m ([ordered]@{
@@ -83,7 +85,7 @@ if ($chromium.Count -gt 0) {
             description     = $Description
             path            = $exe
             type            = 'stdio'
-            allowed_origins = @("chrome-extension://$ChromeExtensionId/")
+            allowed_origins = @($ChromeExtensionIds | ForEach-Object { "chrome-extension://$_/" })
         })
         foreach ($b in $chromium) { Set-HostKey $b $m }
     }

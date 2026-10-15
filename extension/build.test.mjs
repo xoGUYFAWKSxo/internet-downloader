@@ -28,6 +28,10 @@ test("firefox manifest", () => {
   assert.deepEqual(m.background.scripts, ["background.js"]);
   assert.equal(m.background.service_worker, undefined);
   assert.equal(m.browser_specific_settings.gecko.id, "internet-downloader@xoguyfawksxo");
+  // Cookies, addresses and playlists go to the app, outside the browser, so
+  // Firefox shows them at install; its own consent screen needs Firefox 140.
+  assert.deepEqual(m.browser_specific_settings.gecko.data_collection_permissions.required, ["authenticationInfo", "browsingActivity", "websiteContent"]);
+  assert.equal(m.browser_specific_settings.gecko.strict_min_version, "140.0");
   assert.equal(m.key, undefined);
   assert.ok(m.permissions.includes("nativeMessaging"));
 });
@@ -45,4 +49,11 @@ test("a release sets the version", () => {
   for (const t of ["chrome", "firefox"]) assert.equal(manifestFor(t, "1.2.0").version, "1.2.0");
   assert.equal(manifestFor("chrome").version, "0.0.1");
   for (const v of ["1.2.0-beta", "v1", "", "1.2.3.4.5"]) assert.throws(() => manifestFor("chrome", v));
+});
+
+test("the store build is the Chrome build without its key", () => {
+  const { key, ...chrome } = manifestFor("chrome", "1.2.0");
+  assert.ok(key);
+  assert.deepEqual(manifestFor("chrome-store", "1.2.0"), chrome);
+  assert.throws(() => manifestFor("edge"));
 });

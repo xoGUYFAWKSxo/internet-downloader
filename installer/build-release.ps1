@@ -77,6 +77,12 @@ try {
         $zip = Join-Path $Out "InternetDownloader-$Version-$t-extension.zip"
         Invoke-Native "zipping the $t extension" { & $tar -a -c -f $zip -C "extension\dist\$t" * }
     }
+    # For the Chrome Web Store and Edge Add-ons, which refuse the fixed key;
+    # Firefox's store takes the Firefox zip. Not attached to the release.
+    Invoke-Native 'store extension build' { node extension/build.mjs "--version=$Version" chrome-store }
+    New-Item -ItemType Directory -Path (Join-Path $Out 'store') -Force | Out-Null
+    $zip = Join-Path $Out "store\InternetDownloader-$Version-chrome-store.zip"
+    Invoke-Native 'zipping the store extension' { & $tar -a -c -f $zip -C 'extension\dist\chrome-store' * }
 
     # FFmpeg, from the cache when it is already there and intact.
     $ffzip = Join-Path $Cache "ffmpeg-$($FFmpeg.Version)-essentials_build.zip"
