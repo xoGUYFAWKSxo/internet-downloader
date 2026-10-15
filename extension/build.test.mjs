@@ -40,3 +40,9 @@ test("both manifests can watch requests and use ES modules", () => {
     assert.equal(m.background.type, "module");
   }
 });
+
+test("a release sets the version", () => {
+  for (const t of ["chrome", "firefox"]) assert.equal(manifestFor(t, "1.2.0").version, "1.2.0");
+  assert.equal(manifestFor("chrome").version, "0.0.1");
+  for (const v of ["1.2.0-beta", "v1", "", "1.2.3.4.5"]) assert.throws(() => manifestFor("chrome", v));
+});
