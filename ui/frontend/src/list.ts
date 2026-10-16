@@ -750,6 +750,12 @@ const MODE: Record<string, string> = {
 const checks = new Map<number, {text: string, cls: string}>();
 let mediaCount = 0;
 
+// Found streams are kept for a day, so one may be from yesterday.
+function received(at: string): string {
+    const d = new Date(at);
+    return d.toDateString() === new Date().toDateString() ? d.toLocaleTimeString() : d.toLocaleString();
+}
+
 async function refreshMedia() {
     let items;
     try {
@@ -763,7 +769,7 @@ async function refreshMedia() {
         const li = document.createElement('li');
         const title = el('div', 'title', '');
         title.append(el('span', 'kind', LABEL[m.kind] ?? m.kind), el('span', '', m.pageTitle || new URL(m.url).host));
-        const details = [`from ${m.browser}`, new Date(m.received).toLocaleTimeString(), `${m.cookies} cookies`];
+        const details = [`from ${m.browser}`, received(m.received), `${m.cookies} cookies`];
         if (m.manifestBytes) details.push(`playlist ${m.manifestBytes} bytes`);
         const check = document.createElement('button');
         check.textContent = 'Check server';

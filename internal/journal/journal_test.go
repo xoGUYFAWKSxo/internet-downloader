@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/fetch"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/media"
@@ -138,5 +139,48 @@ func TestTargetAndSettings(t *testing.T) {
 			t.Fatalf("open %d: setting = %q", i, got)
 		}
 		j.Close()
+	}
+}
+
+// Found streams survive closing, newest kept, and go after their time.
+func TestReceived(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "downloads.db")
+	j, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1_800_000_000, 0)
+	for i := uint64(1); i <= 4; i++ {
+		it := media.Item{ID: i, Received: now.Add(time.Duration(i) * time.Hour), Browser: "chrome",
+			Context: media.Context{URL: "https://cdn.test/a.m3u8", Kind: media.KindHLS, Cookies: []media.Cookie{{Name: "s", Value: "secret"}}}}
+		if err := j.SaveReceived(it, 3, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	j.Close()
+
+	j, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer j.Close()
+	got, err := j.LoadReceived(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 || got[0].ID != 2 || got[2].ID != 4 || got[0].Context.Cookies[0].Value != "secret" || !got[0].Received.Equal(now.Add(2*time.Hour)) {
+		t.Fatalf("got %+v", got)
+	}
+	// Older than since: deleted, not just left out.
+	if got, _ = j.LoadReceived(now.Add(3*time.Hour + time.Minute)); len(got) != 1 || got[0].ID != 4 {
+		t.Fatalf("after expiry %+v", got)
+	}
+	if got, _ = j.LoadReceived(now); len(got) != 1 {
+		t.Fatalf("expired ones came back: %+v", got)
+	}
+	// Saving one also deletes those past their time.
+	j.SaveReceived(media.Item{ID: 6, Received: now.Add(5 * time.Hour)}, 3, now.Add(5*time.Hour))
+	if got, _ = j.LoadReceived(now); len(got) != 1 || got[0].ID != 6 {
+		t.Fatalf("after saving another: %+v", got)
 	}
 }

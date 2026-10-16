@@ -815,6 +815,12 @@ func (e *engine) restore(jr *journal.Journal) error {
 			os.RemoveAll(p)
 		}
 	}
+	// The download list is back even if this fails.
+	if found, err := jr.LoadReceived(e.now().Add(-receivedFor)); err != nil {
+		fmt.Fprintf(e.log, "couldn't load the streams found before: %v\n", err)
+	} else {
+		e.inbox.Restore(found)
+	}
 	return nil
 }
 

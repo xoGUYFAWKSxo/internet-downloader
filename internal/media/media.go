@@ -155,6 +155,20 @@ func (b *Inbox) Add(browser string, c Context, now time.Time) uint64 {
 	return b.nextID
 }
 
+// Restore puts back items kept from before, oldest first, newer IDs going on
+// from theirs. It is for a new inbox, before anything is added.
+func (b *Inbox) Restore(items []Item) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(items) > b.max {
+		items = items[len(items)-b.max:]
+	}
+	b.items = append([]Item(nil), items...)
+	for _, it := range items {
+		b.nextID = max(b.nextID, it.ID)
+	}
+}
+
 // Get returns the full item with that ID, if it's still kept.
 func (b *Inbox) Get(id uint64) (Item, bool) {
 	b.mu.Lock()

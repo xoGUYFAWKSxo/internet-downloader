@@ -67,3 +67,14 @@ func TestInbox(t *testing.T) {
 		t.Fatalf("counts wrong: %+v", s[1])
 	}
 }
+
+func TestInboxRestore(t *testing.T) {
+	b := NewInbox(2)
+	b.Restore([]Item{{ID: 3}, {ID: 7}, {ID: 9}})
+	if s := b.Summaries(); len(s) != 2 || s[0].ID != 9 || s[1].ID != 7 {
+		t.Fatalf("restored %+v", s)
+	}
+	if id := b.Add("chrome", Context{URL: "https://x.test/a.mpd", Kind: KindDASH}, time.Now()); id != 10 {
+		t.Fatalf("next ID %d", id)
+	}
+}
