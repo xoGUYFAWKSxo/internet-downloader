@@ -122,9 +122,36 @@ func TestPowerNot(t *testing.T) {
 		t.Fatalf("did %q", a)
 	default:
 	}
-	if err := e.setSetting(setWhenDone, "restart"); err == nil {
+	if err := e.setSetting(setWhenDone, "reboot"); err == nil {
 		t.Fatal("unknown action taken")
 	}
 }
 
 func ipcMsg(typ string) ipc.Message { return ipc.Message{Type: typ} }
+
+// Restart and hibernate are actions too; hibernate is refused where Windows
+// has it turned off.
+func TestPowerRestartHibernate(t *testing.T) {
+	e, stopped, _, did := powerEngine(t, 20*time.Millisecond)
+	e.canHibernate = func() bool { return false }
+	if err := e.setSetting(setWhenDone, powerHibernate); err != errNoHibernate {
+		t.Fatalf("hibernate allowed: %v", err)
+	}
+	e.canHibernate = func() bool { return true }
+	if err := e.setSetting(setWhenDone, powerHibernate); err != nil {
+		t.Fatal(err)
+	}
+	call(t, e, "settings.save", map[string]string{setWhenDone: powerRestart})
+	runQueueOnce(t, e, stopped)
+	select {
+	case a := <-did:
+		if a != powerRestart {
+			t.Fatalf("did %q", a)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the computer wasn't restarted")
+	}
+	if powerText(powerRestart) != "restart the computer" || powerText(powerHibernate) != "hibernate the computer" {
+		t.Fatal("powerText")
+	}
+}

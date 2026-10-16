@@ -1,6 +1,6 @@
 // The progress window of one download, like IDM's: what it is doing, and in
 // the details, a map of the file and what each connection is doing.
-import {DownloadDetail, FileSHA256, OpenFile, PauseDownload, ResumeDownload, SetSetting, Settings, ShowDetails, ShowInFolder} from '../wailsjs/go/main/App';
+import {DownloadDetail, FileSHA256, OpenFile, PauseDownload, ResumeDownload, SetDownloadLimit, SetSetting, Settings, ShowDetails, ShowInFolder} from '../wailsjs/go/main/App';
 import {Quit, WindowSetTitle} from '../wailsjs/runtime/runtime';
 import {$, duration, el, msg, percent, size} from './util';
 
@@ -16,6 +16,8 @@ const PAGE = `
         <tr><th>Downloaded</th><td id="pw-done"></td></tr>
         <tr id="pw-rate-row"><th>Transfer rate</th><td id="pw-rate"></td></tr>
         <tr id="pw-left-row"><th>Time left</th><td id="pw-left"></td></tr>
+        <tr id="pw-limit-row"><th><label for="pw-limit">Speed limit</label></th>
+            <td><div class="pw-hash"><input type="number" id="pw-limit" min="1" max="1000000" step="1" placeholder="None"> KB/s<button type="button" id="pw-limit-set">Set</button></div></td></tr>
         <tr id="pw-hash-row" hidden><th><label for="pw-hash">SHA-256</label></th>
             <td><div class="pw-hash" id="pw-hash-ask"><input type="text" id="pw-hash" spellcheck="false" placeholder="Paste one to compare, or leave empty"><button type="button" id="pw-hash-check">Check</button></div>
             <span class="pw-hash-out" id="pw-hash-out" hidden></span></td></tr>
@@ -143,6 +145,22 @@ export function start(id: number) {
         }
         $<HTMLButtonElement>('pw-hash-check').disabled = false;
     });
+    // This download's own limit; empty is none. Filled in once, so a
+    // refresh doesn't undo what is being typed.
+    const limit = $<HTMLInputElement>('pw-limit');
+    let limitShown = false;
+    const setLimit = () => {
+        const v = limit.value.trim();
+        const kb = v === '' ? 0 : Number(v);
+        if (!Number.isInteger(kb) || kb < 0 || kb > 1000000) {
+            $('pw-status').textContent = 'The speed limit should be a whole number of KB/s, from 1 to 1000000, or empty for none.';
+            $('pw-status').className = 'bad';
+            return;
+        }
+        act(() => SetDownloadLimit(id, kb));
+    };
+    $('pw-limit-set').addEventListener('click', setLimit);
+    limit.addEventListener('keydown', (e) => { if (e.key === 'Enter') setLimit(); });
     const quiet = $<HTMLInputElement>('pw-quiet');
     Settings().then((s) => { quiet.checked = s.done === '0'; }).catch(() => {});
     quiet.addEventListener('change', () => SetSetting('done', quiet.checked ? '0' : '1').catch((err) => { $('pw-status').textContent = msg(err); }));
@@ -193,7 +211,11 @@ export function start(id: number) {
         $('pw-folder').hidden = !(done || s.state === 'failed' && s.path);
         // A file that didn't match can be hashed too, to compare by hand.
         const file = done || s.state === 'failed' && !!s.path;
-        $('pw-rate-row').hidden = $('pw-left-row').hidden = file;
+        $('pw-rate-row').hidden = $('pw-left-row').hidden = $('pw-limit-row').hidden = file;
+        if (!limitShown) {
+            limitShown = true;
+            limit.value = s.limitKB ? String(s.limitKB) : '';
+        }
         $('pw-hash-row').hidden = !file;
         if (done && s.sha256 && $('pw-hash-out').hidden) hashed('Matches the one you gave.', 'ok');
         const pause = $<HTMLButtonElement>('pw-pause');

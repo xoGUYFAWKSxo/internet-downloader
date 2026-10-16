@@ -64,6 +64,8 @@ type job struct {
 	// dir and name are where the user chose to save the file; "" for
 	// Downloads and the server's name. Set before the job first runs.
 	dir, name string
+	// limiter is its own speed limit, made when it first runs.
+	limiter *fetch.Limiter
 }
 
 type downloads struct {
@@ -297,7 +299,7 @@ func (e *engine) getResumable(ctx context.Context, j *job) (string, int64, error
 		}
 	}
 	if out == nil {
-		dir := e.saveDir()
+		dir := e.dirFor(name)
 		if j.dir != "" {
 			dir = j.dir
 		}
@@ -332,7 +334,7 @@ func (e *engine) getResumable(ctx context.Context, j *job) (string, int64, error
 	fmt.Fprintf(e.log, "download %d (%s): %s, %s, %d streams, %d bytes, %d already in\n", j.ID, j.host, res.Protocol, res.Plan.Mode, res.Plan.Streams, res.Size, out.Written())
 
 	stop := e.checkpoints(j, out)
-	err = fetch.Download(ctx, *j.req, res, out, fetch.Options{RootCAs: e.probe.RootCAs, OnLimit: e.onLimit(j), Watch: watch, Limit: e.limit})
+	err = fetch.Download(ctx, *j.req, res, out, fetch.Options{RootCAs: e.probe.RootCAs, OnLimit: e.onLimit(j), Watch: watch, Limit: e.limiter(j)})
 	stop()
 	if err == nil {
 		var path string
@@ -569,7 +571,7 @@ func (e *engine) getFile(ctx context.Context, j *job, r probe.Request, dir strin
 	}
 	started(res, out)
 	fmt.Fprintf(e.log, "download %d (%s): %s, %s, %d streams, %d bytes\n", j.ID, hostOf(r.URL), res.Protocol, res.Plan.Mode, res.Plan.Streams, res.Size)
-	err = fetch.Download(ctx, r, res, out, fetch.Options{RootCAs: e.probe.RootCAs, OnLimit: e.onLimit(j), Limit: e.limit})
+	err = fetch.Download(ctx, r, res, out, fetch.Options{RootCAs: e.probe.RootCAs, OnLimit: e.onLimit(j), Limit: e.limiter(j)})
 	var path string
 	if err == nil {
 		path, err = out.Finish()

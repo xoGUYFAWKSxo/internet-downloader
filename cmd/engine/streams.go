@@ -91,7 +91,7 @@ func (e *engine) runStream(ctx context.Context, j *job) (string, int64, error) {
 	if err != nil {
 		return "", 0, err
 	}
-	dir, name := e.saveDir(), streamName(c)
+	dir, name := e.dirFor(streamName(c)+ext), streamName(c)
 	if j.dir != "" {
 		dir = j.dir
 	}
@@ -354,7 +354,7 @@ func (e *engine) getFragments(ctx context.Context, j *job, r probe.Request, t st
 		return nil
 	}
 	err = fetch.Fragments(ctx, r, t.Fragments[from:], w, fetch.FragmentOptions{
-		Options:  fetch.Options{RootCAs: e.probe.RootCAs, OnLimit: e.onLimit(j), Limit: e.limit},
+		Options:  fetch.Options{RootCAs: e.probe.RootCAs, OnLimit: e.onLimit(j), Limit: e.limiter(j)},
 		Progress: &prog,
 		OnStart: func(protocol string, streams int) {
 			e.dl.update(j, func(j *job) { j.Protocol, j.Streams = protocol, streams })

@@ -83,3 +83,33 @@ func TestLimiterChanges(t *testing.T) {
 		t.Fatal("no limiter should mean no limit")
 	}
 }
+
+// A child limiter takes its bytes from its parent too, and reads in pieces
+// small enough for the lower of the two.
+func TestLimiterChild(t *testing.T) {
+	p := NewLimiter()
+	at := time.Now() // no time passes, so nothing refills
+	p.now = func() time.Time { return at }
+	p.SetRate(1 << 20)
+	c := p.Child()
+	if c.chunk(1<<20) != 128<<10 {
+		t.Fatalf("chunk under the parent: %d", c.chunk(1<<20))
+	}
+	c.SetRate(64 << 10)
+	if c.chunk(1<<20) != 8<<10 || p.Rate() != 1<<20 {
+		t.Fatalf("chunk with its own rate: %d", c.chunk(1<<20))
+	}
+	if err := c.wait(context.Background(), 1000); err != nil {
+		t.Fatal(err)
+	}
+	p.mu.Lock()
+	avail := p.avail
+	p.mu.Unlock()
+	if avail >= 0 {
+		t.Fatalf("the parent's bucket wasn't used: %v", avail)
+	}
+	var none *Limiter
+	if none.Child().chunk(10) != 10 {
+		t.Fatal("child of no limiter")
+	}
+}

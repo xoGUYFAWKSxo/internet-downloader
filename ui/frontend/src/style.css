@@ -280,7 +280,7 @@ body.progress-window { background: var(--chrome); }
 .opt textarea { width: 100%; padding: 4px 6px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 2px; resize: vertical; user-select: text; }
 .ask #ask-same button { padding: 1px 8px; font-size: 12px; }
 .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
-.tabs button { padding: 5px 12px; border: 1px solid transparent; border-bottom: none; background: none; color: var(--text); border-radius: 3px 3px 0 0; margin-bottom: -1px; }
+.tabs button { padding: 5px 9px; white-space: nowrap; border: 1px solid transparent; border-bottom: none; background: none; color: var(--text); border-radius: 3px 3px 0 0; margin-bottom: -1px; }
 .tabs button:hover { background: var(--hover); }
 .tabs button.current { background: var(--bg); border-color: var(--border); }
 .days { display: flex; flex-wrap: wrap; gap: 4px 14px; padding-left: 22px; }
@@ -288,3 +288,7 @@ body.progress-window { background: var(--chrome); }
 /* The countdown before sleep or turning off */
 .power p { margin: 0; }
 .power .pw-buttons { margin-top: auto; }
+
+/* Options, Folders: a folder for each category */
+.opt-folders th { width: 90px; }
+.opt-folders td { width: auto; }

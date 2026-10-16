@@ -85,6 +85,7 @@ export namespace fetch {
 	    resumable?: boolean;
 	    queue?: number;
 	    sha256?: string;
+	    limitKB?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Status(source);
@@ -108,6 +109,7 @@ export namespace fetch {
 	        this.resumable = source["resumable"];
 	        this.queue = source["queue"];
 	        this.sha256 = source["sha256"];
+	        this.limitKB = source["limitKB"];
 	    }
 	}
 	export class Detail {

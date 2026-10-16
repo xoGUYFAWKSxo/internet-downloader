@@ -67,6 +67,8 @@ type engine struct {
 	power      func(action string) error
 	powerDelay time.Duration
 	pw         powerState
+	// canHibernate, if set, tells whether hibernating is possible.
+	canHibernate func() bool
 }
 
 func newEngine(log io.Writer) *engine {
@@ -134,6 +136,18 @@ func (e *engine) handle(m ipc.Message) ipc.Message {
 			return fail(err.Error())
 		}
 		return ipc.Message{Type: "downloads.detail", Payload: payload(d)}
+	case "downloads.limit":
+		var in struct {
+			ID uint64 `json:"id"`
+			KB int64  `json:"kb"`
+		}
+		if err := json.Unmarshal(m.Payload, &in); err != nil {
+			return fail("invalid request: " + err.Error())
+		}
+		if err := e.setJobLimit(in.ID, in.KB); err != nil {
+			return fail(err.Error())
+		}
+		return ipc.Message{Type: "downloads.limit"}
 	case "downloads.cancel":
 		var in idRequest
 		if err := json.Unmarshal(m.Payload, &in); err != nil {

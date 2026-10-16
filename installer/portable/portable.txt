@@ -1,0 +1,19 @@
+Galactic Downloader {version}, portable version
+
+This file makes the app keep everything in the "data" folder next to it: the
+download list, the log and the window's own files. Nothing is written to
+%LOCALAPPDATA%, and there is nothing to uninstall: delete the folder. Delete
+this file and the app works like the installed one instead.
+
+Start it with ui.exe. It keeps running in the tray after you close the
+window; Quit is on the tray icon's menu.
+
+To use the browser extension, run "Connect browsers.cmd" once. It tells
+Chrome, Edge and Firefox where this copy is, for your Windows user only (no
+admin rights). Run it again if you move the folder. If the installed app is
+on this computer too, the browsers use whichever was connected last;
+reinstalling the app, or "Disconnect browsers.cmd", sets that back. Run
+"Disconnect browsers.cmd" before deleting the folder.
+
+The installed and the portable version can't run at the same time: Quit one
+before starting the other.

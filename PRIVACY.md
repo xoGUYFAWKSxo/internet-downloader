@@ -27,7 +27,7 @@ Like a browser, the app marks each finished file as downloaded from the internet
 
 ## Removing the data
 
-Closing the browser clears the extension's lists. Deleting a download in the app removes what it kept for it. Uninstalling the app leaves its download list in `%LOCALAPPDATA%\InternetDownloader`, which you can delete.
+Closing the browser clears the extension's lists. Deleting a download in the app removes what it kept for it. Uninstalling the app leaves its download list in `%LOCALAPPDATA%\InternetDownloader`, which you can delete. The portable version keeps all of this in the `data` folder beside its programs instead.
 
 ## Contact
 

@@ -13,12 +13,14 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// When the queue finishes by itself, the computer can be put to sleep or
-// turned off, as IDM's queue can. It is never done at once: a window counts
+// When the queue finishes by itself, the computer can be put to sleep,
+// hibernated, turned off or restarted, as IDM's queue can. It is never done at once: a window counts
 // down for a minute, and closing it or Cancel stops it.
 const (
-	powerSleep = "sleep"
-	powerOff   = "off"
+	powerSleep     = "sleep"
+	powerHibernate = "hibernate"
+	powerOff       = "off"
+	powerRestart   = "restart"
 )
 
 type powerState struct {
@@ -112,33 +114,63 @@ func (e *engine) powerNow(by string) error {
 }
 
 func powerText(action string) string {
-	if action == powerSleep {
+	switch action {
+	case powerSleep:
 		return "put the computer to sleep"
+	case powerHibernate:
+		return "hibernate the computer"
+	case powerRestart:
+		return "restart the computer"
 	}
 	return "turn the computer off"
 }
 
-var setSuspendState = windows.NewLazySystemDLL("powrprof.dll").NewProc("SetSuspendState")
+var (
+	powrprof              = windows.NewLazySystemDLL("powrprof.dll")
+	setSuspendState       = powrprof.NewProc("SetSuspendState")
+	isPwrHibernateAllowed = powrprof.NewProc("IsPwrHibernateAllowed")
+)
 
-// powerDo puts the computer to sleep or turns it off, as the Start menu
-// does. Turning off isn't forced: a program with unsaved work can still
-// ask to keep it on.
+// errNoHibernate is for a computer with hibernation turned off, as Windows
+// lets an administrator do.
+var errNoHibernate = errors.New("Hibernation is turned off on this computer. Choose another action, or turn it on (as an administrator: powercfg /hibernate on).")
+
+// canHibernate tells whether Windows would hibernate now.
+func canHibernate() bool {
+	r, _, _ := isPwrHibernateAllowed.Call()
+	return r != 0
+}
+
+// powerDo puts the computer to sleep, hibernates it, turns it off or
+// restarts it, as the Start menu does. Turning off and restarting aren't
+// forced: a program with unsaved work can still ask to keep it on.
 func powerDo(action string) error {
 	switch action {
-	case powerSleep:
+	case powerSleep, powerHibernate:
+		hibernate := uintptr(0)
+		if action == powerHibernate {
+			if !canHibernate() {
+				return errNoHibernate
+			}
+			hibernate = 1
+		}
 		if err := allowShutdown(); err != nil {
 			return err
 		}
-		if r, _, err := setSuspendState.Call(0, 0, 0); r == 0 {
+		if r, _, err := setSuspendState.Call(hibernate, 0, 0); r == 0 {
 			return err
 		}
 		return nil
-	case powerOff:
+	case powerOff, powerRestart:
 		dir, err := windows.GetSystemDirectory()
 		if err != nil {
 			return err
 		}
-		cmd := exec.Command(filepath.Join(dir, "shutdown.exe"), "/s", "/t", "0")
+		how := "/s"
+		if action == powerRestart {
+			how = "/r"
+		}
+		cmd := exec.Command(filepath.Join(dir, "shutdown.exe"), how, "/t", "0")
 		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("%v %s", err, out)

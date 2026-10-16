@@ -8,12 +8,16 @@ import (
 	"embed"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
+
+	"github.com/xoGUYFAWKSxo/internet-downloader/internal/launch"
 )
 
 //go:embed all:frontend/dist
@@ -45,6 +49,7 @@ func main() {
 			Assets: assets,
 		},
 		OnStartup: app.startup,
+		Windows:   winOptions(),
 		// Opening the app again (from the tray or a shortcut) shows this window.
 		SingleInstanceLock: &options.SingleInstanceLock{
 			UniqueId:               "com.xoguyfawksxo.internet_downloader.ui",
@@ -93,6 +98,16 @@ func optionsArg(args []string) string {
 	return ""
 }
 
+// winOptions keeps the portable version's WebView2 files (its cache, and
+// what the window remembers) in its own data folder; the installed one
+// keeps Wails' default.
+func winOptions() *windows.Options {
+	if !launch.Portable() {
+		return nil
+	}
+	return &windows.Options{WebviewUserDataPath: filepath.Join(launch.DataDir(), "webview")}
+}
+
 // runSmall shows a download's progress window or a link's Download File
 // Info box. Each is a process of its own, as Wails gives each process one
 // window; opening it again for the same download or link brings the open
@@ -107,6 +122,7 @@ func runSmall(app *App, title string, width, height int, id string) {
 			Assets: assets,
 		},
 		OnStartup: app.startup,
+		Windows:   winOptions(),
 		// Opened by the engine, a background process, Windows can leave
 		// the window minimised behind others; bring it up once it's drawn.
 		OnDomReady: func(context.Context) { app.show() },

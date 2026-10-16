@@ -71,6 +71,8 @@ export function ResumeDownload(arg1:number):Promise<void>;
 
 export function SaveSettings(arg1:Record<string, string>):Promise<void>;
 
+export function SetDownloadLimit(arg1:number,arg2:number):Promise<void>;
+
 export function SetSetting(arg1:string,arg2:string):Promise<void>;
 
 export function Settings():Promise<Record<string, string>>;

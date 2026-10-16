@@ -1,8 +1,16 @@
 // The countdown when the queue has finished and Options says to put the
-// computer to sleep or turn it off. Closing it cancels, like Cancel.
+// computer to sleep, hibernate it, turn it off or restart it. Closing it
+// cancels, like Cancel.
 import {CancelPower, PowerInfo, PowerNow} from '../wailsjs/go/main/App';
 import {Quit, WindowSetTitle} from '../wailsjs/runtime/runtime';
 import {$, msg} from './util';
+
+const ACTION: Record<string, {will: string, now: string, title: string}> = {
+    sleep: {will: 'go to sleep', now: 'Sleep now', title: 'Going to sleep'},
+    hibernate: {will: 'hibernate', now: 'Hibernate now', title: 'Hibernating'},
+    off: {will: 'turn off', now: 'Turn off now', title: 'Turning off'},
+    restart: {will: 'restart', now: 'Restart now', title: 'Restarting'},
+};
 
 const PAGE = `
 <div class="pw power">
@@ -29,11 +37,11 @@ export function start() {
                 Quit();
                 return;
             }
-            const sleep = p.action === 'sleep';
+            const t = ACTION[p.action] ?? ACTION.off;
             const n = p.left ?? 0;
-            $('pow-text').textContent = `The computer will ${sleep ? 'go to sleep' : 'turn off'} in ${n} second${n === 1 ? '' : 's'}.`;
-            $('pow-now').textContent = sleep ? 'Sleep now' : 'Turn off now';
-            WindowSetTitle(sleep ? 'Going to sleep' : 'Turning off');
+            $('pow-text').textContent = `The computer will ${t.will} in ${n} second${n === 1 ? '' : 's'}.`;
+            $('pow-now').textContent = t.now;
+            WindowSetTitle(t.title);
         } catch (e) {
             err.textContent = msg(e);
         }
