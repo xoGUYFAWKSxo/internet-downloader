@@ -121,7 +121,7 @@ The app and extension are called Galactic Downloader from 0.1.2 (0.1.0 and 0.1.1
 
 ## Icon and store images
 
-The icon is a Milky Way-style galaxy (`docs/store-assets/galaxy.py`), in the window, tray, installer and extension. Store screenshots, Chrome's promo tile and Edge's logo are in `docs/store-assets/`. The Firefox submission (0.1.3) still has the old arrow icon; the next extension version brings the galaxy.
+The icon is a Milky Way-style galaxy (`docs/store-assets/galaxy.py`), in the window, tray, installer and extension. Store screenshots, Chrome's promo tile and Edge's logo are in `docs/store-assets/`. The Firefox submission (0.1.3) still has the old arrow icon; the next extension version brings the galaxy. After an upgrade from an arrow-icon version, Windows kept showing the arrow on the shortcuts (the user, 0.1.11), as it keeps its own copy of each program's icon; running `ie4uinit.exe -show` fixed it, and the installer now runs that at the end of every install (from 0.1.12).
 
 ## Browser downloads go to the app (from 0.1.5)
 - The extension catches files of 1 MB and larger that the browser starts downloading (`downloads.onCreated`). It pauses the browser's download and sends a `file` message with the address, Referer, type, size and cookies. The engine checks the server first (an error, a web page instead of the file, or a different size is refused). Then the browser's copy is cancelled and removed from its list. On a refusal it is resumed. Blob/data/file addresses, private windows, small files and files of unknown size stay with the browser. A switch in the popup turns it off.

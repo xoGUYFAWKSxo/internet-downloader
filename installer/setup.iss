@@ -75,6 +75,9 @@ Root: HKCU; Subkey: "Software\Microsoft\Edge\NativeMessagingHosts\{#HostName}"; 
 Root: HKCU; Subkey: "Software\Mozilla\NativeMessagingHosts\{#HostName}"; ValueType: string; ValueName: ""; ValueData: "{app}\firefox-host.json"; Flags: uninsdeletekey
 
 [Run]
+; Windows keeps its own copy of each program's icon and misses a new one in
+; an update, so shortcuts can show an older icon; this refreshes the copy.
+Filename: "{sys}\ie4uinit.exe"; Parameters: "-show"; Flags: runhidden skipifdoesntexist
 Filename: "{app}\ui.exe"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
