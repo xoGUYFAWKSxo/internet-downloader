@@ -162,12 +162,13 @@ func (e *engine) handle(m ipc.Message) ipc.Message {
 		return ipc.Message{Type: "downloads.remove"}
 	case "downloads.add":
 		var in struct {
-			URL string `json:"url"`
+			URL   string `json:"url"`
+			Later bool   `json:"later"` // add it to the queue instead of starting it
 		}
 		if err := json.Unmarshal(m.Payload, &in); err != nil {
 			return fail("invalid request: " + err.Error())
 		}
-		id, err := e.addURL(in.URL)
+		id, err := e.addURL(in.URL, in.Later)
 		if err != nil {
 			return fail(err.Error())
 		}
@@ -196,15 +197,16 @@ func (e *engine) handle(m ipc.Message) ipc.Message {
 		return ipc.Message{Type: "asks.get", Payload: payload(a)}
 	case "asks.start":
 		var in struct {
-			ID    uint64 `json:"id"`
-			Dir   string `json:"dir"`
-			Name  string `json:"name"`
-			Later bool   `json:"later"`
+			ID     uint64 `json:"id"`
+			Dir    string `json:"dir"`
+			Name   string `json:"name"`
+			Later  bool   `json:"later"`
+			SHA256 string `json:"sha256"`
 		}
 		if err := json.Unmarshal(m.Payload, &in); err != nil {
 			return fail("invalid request: " + err.Error())
 		}
-		id, err := e.answerAsk(in.ID, in.Dir, in.Name, in.Later)
+		id, err := e.answerAsk(in.ID, in.Dir, in.Name, in.Later, in.SHA256)
 		if err != nil {
 			return fail(err.Error())
 		}

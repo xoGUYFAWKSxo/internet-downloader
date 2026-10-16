@@ -106,3 +106,30 @@ func TestCheckTarget(t *testing.T) {
 		t.Errorf("relative folder: %+v", got)
 	}
 }
+
+func TestLogTail(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "engine.log")
+	if _, err := logTail(p, 100); err == nil || !strings.Contains(err.Error(), "no log") {
+		t.Fatalf("missing log: %v", err)
+	}
+	os.WriteFile(p, []byte("first line\nsecond line\nthird\n"), 0o600)
+	if got, err := logTail(p, 100); err != nil || got != "first line\nsecond line\nthird\n" {
+		t.Fatalf("whole: %q %v", got, err)
+	}
+	// Cut in the middle of a line: that part line is left out.
+	if got, _ := logTail(p, 15); got != "third\n" {
+		t.Fatalf("tail: %q", got)
+	}
+}
+
+func TestFileSHA256(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "a.txt")
+	os.WriteFile(p, []byte("abc"), 0o644)
+	got, err := (&App{}).FileSHA256(p)
+	if err != nil || got != "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" {
+		t.Fatalf("%q %v", got, err)
+	}
+	if _, err := (&App{}).FileSHA256(p + "x"); err == nil {
+		t.Fatal("missing file hashed")
+	}
+}

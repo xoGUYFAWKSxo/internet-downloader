@@ -115,9 +115,9 @@ func trayTip(running int) string {
 
 func quitQuestion(running int) string {
 	if running == 1 {
-		return "A download is still running. Quit anyway?\n\nA file download is paused and can be resumed later; a stream has to start again."
+		return "A download is still running. Quit anyway?\n\nIt is paused, and can be resumed later if the server allows it."
 	}
-	return fmt.Sprintf("%d downloads are still running. Quit anyway?\n\nFile downloads are paused and can be resumed later; streams have to start again.", running)
+	return fmt.Sprintf("%d downloads are still running. Quit anyway?\n\nThey are paused, and can be resumed later where the server allows it.", running)
 }
 
 func updateLabel(v string) string { return "Get version " + v + "…" }

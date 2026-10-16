@@ -13,6 +13,7 @@ const PAGE = `
         <tr><th><label for="ask-name">File name</label></th><td><input type="text" id="ask-name" spellcheck="false"></td></tr>
         <tr><th>Size</th><td id="ask-size"></td></tr>
         <tr><th>Resume capability</th><td id="ask-resume"></td></tr>
+        <tr id="ask-sha-row"><th><label for="ask-sha">SHA-256</label></th><td><input type="text" id="ask-sha" spellcheck="false" placeholder="Optional: the site's checksum, to check the file against"></td></tr>
     </table>
     <p class="note" id="ask-same" hidden><span id="ask-same-text"></span> <button type="button" id="ask-same-show">Show it</button></p>
     <p class="note" id="ask-exists" hidden>A file with this name is already in that folder. The new one will be saved with a number added to its name.</p>
@@ -50,7 +51,8 @@ export function start(id: number) {
         $('ask-note').textContent = a.stream
             ? 'A video stream: its parts are downloaded and joined into one file, whose type is picked then.'
             : a.error ? `The server didn't answer properly: ${a.error} You can still try to download it.` : '';
-        $<HTMLButtonElement>('ask-later').hidden = a.stream;
+        // A joined stream is a file of the app's making, which no published checksum matches.
+        $('ask-sha-row').hidden = a.stream;
         $('ask-same').hidden = !a.same;
         $('ask-same-text').textContent = a.same === 'running'
             ? `This link is already in the list, not finished yet: ${a.sameName}.`
@@ -94,7 +96,7 @@ export function start(id: number) {
         err.textContent = '';
         try {
             if ($<HTMLInputElement>('ask-off').checked) await SetSetting('ask', '0');
-            const dl = await StartAsk(id, dir.value, name.value, later);
+            const dl = await StartAsk(id, dir.value, name.value, later, info?.stream ? '' : $<HTMLInputElement>('ask-sha').value);
             if (!later) await ShowProgress(dl).catch(() => {});
             Quit();
         } catch (e) {

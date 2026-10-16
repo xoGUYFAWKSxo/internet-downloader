@@ -103,7 +103,7 @@ func (e *engine) pumpQueue() {
 	for _, j := range next {
 		fmt.Fprintf(e.log, "download %d (%s): started by the queue\n", j.ID, j.host)
 		e.save(j)
-		e.launch(j, e.runFile)
+		e.launch(j, e.runner(j))
 	}
 }
 
@@ -127,7 +127,7 @@ func (e *engine) queueAdd(ids []uint64) error {
 		j := e.dl.findLocked(id)
 		switch {
 		case j == nil || j.Queue > 0:
-		case j.req == nil || !j.Resumable:
+		case j.req == nil && j.stream == nil || !j.Resumable:
 			refused++
 		default:
 			j.Queue = e.lastInQueue() + 1

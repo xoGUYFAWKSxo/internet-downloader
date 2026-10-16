@@ -43,7 +43,7 @@ func TestStopKeepsTheFile(t *testing.T) {
 		return &stall{w: w, n: 1 << 20, ctx: r.Context(), release: release}
 	})
 	e, stopped := testEngine(t, openJournal(t, filepath.Join(t.TempDir(), "d.db")))
-	id, err := e.addURL(srv.URL + "/file.bin")
+	id, err := e.addURL(srv.URL+"/file.bin", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,9 +77,9 @@ func TestRemoveDownloads(t *testing.T) {
 	jr := openJournal(t, db)
 	e, stopped := testEngine(t, jr)
 	srv, _ := rangeServer(t, testserver.Content(1<<20), nil)
-	kept, _ := e.addURL(srv.URL + "/file.bin")
+	kept, _ := e.addURL(srv.URL+"/file.bin", false)
 	<-stopped
-	gone, _ := e.addURL(srv.URL + "/file.bin")
+	gone, _ := e.addURL(srv.URL+"/file.bin", false)
 	<-stopped
 	list := e.dl.list()
 	keptPath, gonePath := list[1].Path, list[0].Path
@@ -147,7 +147,7 @@ func TestDetail(t *testing.T) {
 	if r := e.handle(ipc.Message{Type: "downloads.detail", Payload: payload(idRequest{99})}); r.Type != "error" {
 		t.Fatalf("unknown id: %+v", r)
 	}
-	id, _ := e.addURL(srv.URL + "/file.bin")
+	id, _ := e.addURL(srv.URL+"/file.bin", false)
 	waitFor(t, e, func(d fetch.Status) bool { return d.State == fetch.Downloading && d.Done >= 4<<20 })
 	get := func() fetch.Detail {
 		t.Helper()

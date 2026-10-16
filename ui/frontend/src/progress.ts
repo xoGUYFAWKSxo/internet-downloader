@@ -1,6 +1,6 @@
 // The progress window of one download, like IDM's: what it is doing, and in
 // the details, a map of the file and what each connection is doing.
-import {DownloadDetail, OpenFile, PauseDownload, ResumeDownload, SetSetting, Settings, ShowDetails, ShowInFolder} from '../wailsjs/go/main/App';
+import {DownloadDetail, FileSHA256, OpenFile, PauseDownload, ResumeDownload, SetSetting, Settings, ShowDetails, ShowInFolder} from '../wailsjs/go/main/App';
 import {Quit, WindowSetTitle} from '../wailsjs/runtime/runtime';
 import {$, duration, el, msg, percent, size} from './util';
 
@@ -14,8 +14,11 @@ const PAGE = `
         <tr><th>Status</th><td id="pw-status"></td></tr>
         <tr><th>File size</th><td id="pw-size"></td></tr>
         <tr><th>Downloaded</th><td id="pw-done"></td></tr>
-        <tr><th>Transfer rate</th><td id="pw-rate"></td></tr>
-        <tr><th>Time left</th><td id="pw-left"></td></tr>
+        <tr id="pw-rate-row"><th>Transfer rate</th><td id="pw-rate"></td></tr>
+        <tr id="pw-left-row"><th>Time left</th><td id="pw-left"></td></tr>
+        <tr id="pw-hash-row" hidden><th><label for="pw-hash">SHA-256</label></th>
+            <td><div class="pw-hash" id="pw-hash-ask"><input type="text" id="pw-hash" spellcheck="false" placeholder="Paste one to compare, or leave empty"><button type="button" id="pw-hash-check">Check</button></div>
+            <span class="pw-hash-out" id="pw-hash-out" hidden></span></td></tr>
         <tr><th>Resume capability</th><td id="pw-resume"></td></tr>
         <tr><th>Server</th><td id="pw-server"></td></tr>
     </table>
@@ -41,7 +44,7 @@ const PAGE = `
     </section>
 </div>`;
 
-const RUNNING = new Set(['checking', 'downloading', 'joining', 'waiting']);
+const RUNNING = new Set(['checking', 'downloading', 'joining', 'waiting', 'verifying']);
 
 const CONN: Record<string, string> = {
     waiting: 'Waiting: the server allows fewer connections',
@@ -62,6 +65,7 @@ function stateText(s: Status): string {
     case 'checking': return 'Connecting…';
     case 'downloading': return s.parts ? `Receiving segment ${s.partsDone ?? 0} of ${s.parts}` : 'Receiving data…';
     case 'joining': return 'Joining video and audio…';
+    case 'verifying': return 'Checking the SHA-256 you gave…';
     case 'waiting': return s.error || 'Waiting to try again';
     case 'paused': return s.error || 'Paused';
     case 'done': return 'Complete';
@@ -113,6 +117,32 @@ export function start(id: number) {
     });
     $('pw-open').addEventListener('click', () => last?.status.path && act(() => OpenFile(last!.status.path!)));
     $('pw-folder').addEventListener('click', () => last?.status.path && act(() => ShowInFolder(last!.status.path!)));
+    const hashOut = $('pw-hash-out');
+    const hashed = (text: string, cls: string) => {
+        hashOut.hidden = false;
+        hashOut.textContent = text;
+        hashOut.className = `pw-hash-out ${cls}`;
+    };
+    $('pw-hash-check').addEventListener('click', async () => {
+        const path = last?.status.path;
+        if (!path) return;
+        const want = $<HTMLInputElement>('pw-hash').value.replace(/\s+/g, '').replace(/^sha-?256[:=]/i, '').toLowerCase();
+        if (want && !/^[0-9a-f]{64}$/.test(want)) {
+            hashed("That isn't a SHA-256: it should be 64 characters, the digits 0-9 and letters a-f.", 'bad');
+            return;
+        }
+        $<HTMLButtonElement>('pw-hash-check').disabled = true;
+        hashed('Working it out…', '');
+        try {
+            const got = await FileSHA256(path);
+            if (!want) hashed(got, '');
+            else if (got === want) hashed('Matches the one you pasted.', 'ok');
+            else hashed(`Doesn't match. This file's is ${got}`, 'bad');
+        } catch (err) {
+            hashed(msg(err), 'bad');
+        }
+        $<HTMLButtonElement>('pw-hash-check').disabled = false;
+    });
     const quiet = $<HTMLInputElement>('pw-quiet');
     Settings().then((s) => { quiet.checked = s.done === '0'; }).catch(() => {});
     quiet.addEventListener('change', () => SetSetting('done', quiet.checked ? '0' : '1').catch((err) => { $('pw-status').textContent = msg(err); }));
@@ -159,7 +189,13 @@ export function start(id: number) {
         const done = s.state === 'done';
         $('pw-open').hidden = !done;
         $('pw-quiet-row').hidden = !done;
-        $('pw-folder').hidden = !done;
+        // A file that didn't match its SHA-256 is kept, to be looked at.
+        $('pw-folder').hidden = !(done || s.state === 'failed' && s.path);
+        // A file that didn't match can be hashed too, to compare by hand.
+        const file = done || s.state === 'failed' && !!s.path;
+        $('pw-rate-row').hidden = $('pw-left-row').hidden = file;
+        $('pw-hash-row').hidden = !file;
+        if (done && s.sha256 && $('pw-hash-out').hidden) hashed('Matches the one you gave.', 'ok');
         const pause = $<HTMLButtonElement>('pw-pause');
         pause.hidden = done;
         pause.textContent = running ? 'Pause' : 'Resume';

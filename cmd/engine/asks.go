@@ -58,12 +58,14 @@ const (
 	setCatchMin   = "catchMinMB" // browser downloads smaller than this many MB stay in the browser
 	setCatchSites = "catchSites" // and those from these sites, one per line
 	setCatchTypes = "catchTypes" // and these file types, space-separated extensions
+	setClip       = "clip"       // "1": the window offers links copied to the clipboard
 )
 
 var settingDefaults = map[string]string{
 	setAsk: "1", setDone: "1", setLimit: "0", setLimitKB: "1024", setQueueMax: "2",
 	setSched: "0", setSchedStart: "02:00", setSchedStop: "", setSchedDays: "0123456",
 	setUpdates: "1", setAwake: "1", setCatchMin: "1", setCatchSites: "", setCatchTypes: "",
+	setClip: "0",
 }
 
 func (e *engine) setting(key string) string {
@@ -118,7 +120,7 @@ func (e *engine) setSettings(m map[string]string) error {
 
 func checkSetting(key, value string) error {
 	switch key {
-	case setAsk, setDone, setLimit, setSched, setUpdates, setAwake:
+	case setAsk, setDone, setLimit, setSched, setUpdates, setAwake, setClip:
 		if value != "0" && value != "1" {
 			return errors.New("invalid setting value")
 		}
@@ -196,7 +198,7 @@ func (e *engine) newAsk(c media.Context) uint64 {
 	a := &ask{made: e.now(), media: c, stream: stream,
 		info: AskInfo{Host: hostOf(c.URL), Size: -1, Stream: stream, Dir: e.saveDir()}}
 	if stream {
-		a.info.Name, a.info.Resume = streamName(c), "no"
+		a.info.Name, a.info.Resume = streamName(c), "yes"
 	} else {
 		a.info.Name, a.info.Checking = fileNameOf(c.URL), true
 	}
@@ -285,8 +287,9 @@ func (e *engine) dropAsk(id uint64) {
 }
 
 // answerAsk downloads an ask's link into dir under name, or with later adds
-// it to the list paused, to start with Resume.
-func (e *engine) answerAsk(id uint64, dir, name string, later bool) (uint64, error) {
+// it to the queue, to start with Resume or the queue. A sum, if given, is the
+// SHA-256 the finished file must have.
+func (e *engine) answerAsk(id uint64, dir, name string, later bool, sum string) (uint64, error) {
 	dir = filepath.Clean(strings.TrimSpace(dir))
 	if !filepath.IsAbs(dir) {
 		return 0, errors.New("Choose a folder to save into.")
@@ -295,6 +298,10 @@ func (e *engine) answerAsk(id uint64, dir, name string, later bool) (uint64, err
 		return 0, errors.New("Type a name for the file.")
 	}
 	name = outfile.CleanName(name)
+	sum, err := cleanSHA256(sum)
+	if err != nil {
+		return 0, err
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return 0, fmt.Errorf("Couldn't use that folder: %s.", strings.TrimRight(err.Error(), ". "))
 	}
@@ -305,30 +312,51 @@ func (e *engine) answerAsk(id uint64, dir, name string, later bool) (uint64, err
 	if !ok {
 		return 0, errors.New("That link is no longer waiting; send it from the browser again.")
 	}
-	if a.stream && later {
-		return 0, errors.New("A stream can't wait in the list, as it can't be resumed; start it now.")
-	}
 	if err := e.setSetting(setDir, dir); err != nil {
 		fmt.Fprintf(e.log, "couldn't save the folder: %v\n", err)
 	}
-	set := func(j *job) { j.dir, j.name, j.Name = dir, name, name }
-	if a.stream {
-		c := a.media
-		return e.startJob(c.URL, nil, set, func(ctx context.Context, j *job) { e.runStreamJob(ctx, j, c) }), nil
-	}
+	set := func(j *job) { j.dir, j.name, j.Name, j.SHA256 = dir, name, name, sum }
 	r := request(a.media)
-	if !later {
-		return e.startJob(r.URL, &r, set, e.runFile), nil
+	req, run := &r, e.runFile
+	if a.stream {
+		c, target := a.media, set
+		req, run = nil, e.runStreamJob
+		set = func(j *job) { target(j); j.referrer, j.stream = c.Referer, &streamState{Media: c} }
 	}
-	j := e.newJob(r.URL, &r, func(j *job) {
+	if !later {
+		return e.startJob(r.URL, req, set, run), nil
+	}
+	return e.queueLater(r.URL, req, func(j *job) { set(j); j.Size = a.info.Size }), nil
+}
+
+// queueLater adds a download to the list, paused and at the end of the
+// queue, without starting it.
+func (e *engine) queueLater(u string, req *probe.Request, set func(*job)) uint64 {
+	j := e.newJob(u, req, func(j *job) {
 		set(j)
-		j.State, j.Resumable, j.Size = fetch.Paused, true, a.info.Size
+		j.State, j.Resumable = fetch.Paused, true
 		j.Error = "Not started yet. Resume, or the queue, starts it."
 		j.Queue = e.lastInQueue() + 1
 	})
 	fmt.Fprintf(e.log, "download %d (%s): added to the queue\n", j.ID, j.host)
 	e.pumpQueue()
-	return j.ID, nil
+	return j.ID
+}
+
+// cleanSHA256 tidies a SHA-256 typed or pasted in: spaces and a "sha256:"
+// label go, and letters are made lower case. "" stays "".
+func cleanSHA256(s string) (string, error) {
+	s = strings.ToLower(strings.Join(strings.Fields(s), ""))
+	for _, p := range []string{"sha256:", "sha-256:", "sha256="} {
+		s = strings.TrimPrefix(s, p)
+	}
+	if s == "" {
+		return "", nil
+	}
+	if len(s) != 64 || strings.Trim(s, "0123456789abcdef") != "" {
+		return "", errors.New("That isn't a SHA-256: it should be 64 characters, the digits 0-9 and letters a-f.")
+	}
+	return s, nil
 }
 
 func request(c media.Context) probe.Request {

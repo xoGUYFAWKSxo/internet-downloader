@@ -47,6 +47,10 @@ type FragmentOptions struct {
 	Progress *Progress
 	// OnStart hears the protocol chosen and the parallel requests planned.
 	OnStart func(protocol string, streams int)
+	// OnWritten, if set, is called each time more segments have been
+	// written to w, with how many are written in all. Nothing is written to
+	// w while it runs, so it can flush w and record the count.
+	OnWritten func(written int) error
 }
 
 // Fragments fetches frags in parallel and writes them to w in order. The
@@ -89,6 +93,7 @@ func Fragments(ctx context.Context, r probe.Request, frags []Fragment, w io.Writ
 		gate: newGate(streams), o: o, client: client, req: r, frags: frags,
 		ow: newOrdered(w, 2*streams), keys: map[string][]byte{},
 	}
+	f.ow.onWritten = o.OnWritten
 	if h3 {
 		f.h3Addr = res.H3Addr
 	}
@@ -373,6 +378,8 @@ type ordered struct {
 	window  int
 	pending map[int][]byte
 	wake    chan struct{}
+	// onWritten hears next each time it moves.
+	onWritten func(int) error
 }
 
 func newOrdered(w io.Writer, window int) *ordered {
@@ -416,6 +423,9 @@ func (o *ordered) put(i int, b []byte) error {
 	if moved {
 		close(o.wake)
 		o.wake = make(chan struct{})
+		if o.onWritten != nil {
+			return o.onWritten(o.next)
+		}
 	}
 	return nil
 }

@@ -6,8 +6,9 @@
 // it commits the ranges written, so a committed range is always really on the
 // disk; a resumed download fetches only what isn't committed.
 //
-// A download's request (with its cookies and headers) is kept only while the
-// download can still be resumed, and is wiped when it ends.
+// A download's request (with its cookies and headers), or a stream's, is
+// kept only while the download can still be resumed, and is wiped when it
+// ends.
 package journal
 
 import (
@@ -49,6 +50,9 @@ CREATE TABLE IF NOT EXISTS settings (
 var columns = []string{
 	`ALTER TABLE downloads ADD COLUMN dir TEXT NOT NULL DEFAULT ''`,  // the folder chosen to save into
 	`ALTER TABLE downloads ADD COLUMN name TEXT NOT NULL DEFAULT ''`, // the file name chosen
+	// A stream's request and how far it got, as the engine's JSON; '' for
+	// files, and once the stream can't resume.
+	`ALTER TABLE downloads ADD COLUMN stream TEXT NOT NULL DEFAULT ''`,
 }
 
 type Journal struct{ db *sql.DB }
@@ -62,6 +66,7 @@ type Record struct {
 	Validator string
 	Have      []outfile.Range
 	Dir, Name string // where the user chose to save it; "" for the default
+	Stream    string // a stream's state to resume it, or ""
 }
 
 // Open opens (or creates) the database at path.
@@ -101,6 +106,12 @@ func (j *Journal) Add(s fetch.Status, r *probe.Request) error {
 // SetTarget saves the folder and file name the user chose for a download.
 func (j *Journal) SetTarget(id uint64, dir, name string) error {
 	_, err := j.db.Exec(`UPDATE downloads SET dir = ?, name = ? WHERE id = ?`, dir, name, id)
+	return err
+}
+
+// SetStream saves a stream's state, which holds its request.
+func (j *Journal) SetStream(id uint64, state string) error {
+	_, err := j.db.Exec(`UPDATE downloads SET stream = ? WHERE id = ?`, state, id)
 	return err
 }
 
@@ -166,7 +177,7 @@ func (j *Journal) Commit(id uint64, have []outfile.Range) error {
 }
 
 // End saves a download's final status and wipes what was kept to resume it:
-// the request (cookies included), the file and the ranges.
+// the request (cookies included), a stream's state, the file and the ranges.
 func (j *Journal) End(s fetch.Status) error {
 	st, _, err := encode(s, nil)
 	if err != nil {
@@ -177,7 +188,7 @@ func (j *Journal) End(s fetch.Status) error {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`UPDATE downloads SET status = ?, request = '', part = '', validator = '' WHERE id = ?`, st, s.ID); err != nil {
+	if _, err := tx.Exec(`UPDATE downloads SET status = ?, request = '', stream = '', part = '', validator = '' WHERE id = ?`, st, s.ID); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM ranges WHERE download = ?`, s.ID); err != nil {
@@ -194,7 +205,7 @@ func (j *Journal) Delete(id uint64) error {
 
 // Load gives every saved download, oldest first.
 func (j *Journal) Load() ([]Record, error) {
-	rows, err := j.db.Query(`SELECT id, status, request, part, size, validator, dir, name FROM downloads ORDER BY id`)
+	rows, err := j.db.Query(`SELECT id, status, request, part, size, validator, dir, name, stream FROM downloads ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +214,7 @@ func (j *Journal) Load() ([]Record, error) {
 		var id uint64
 		var st, req string
 		var r Record
-		if err := rows.Scan(&id, &st, &req, &r.Part, &r.Size, &r.Validator, &r.Dir, &r.Name); err != nil {
+		if err := rows.Scan(&id, &st, &req, &r.Part, &r.Size, &r.Validator, &r.Dir, &r.Name, &r.Stream); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -251,7 +262,7 @@ func (j *Journal) ranges(id uint64) ([]outfile.Range, error) {
 // Trim deletes the oldest downloads that have ended, keeping at most keep
 // downloads in all.
 func (j *Journal) Trim(keep int) error {
-	_, err := j.db.Exec(`DELETE FROM downloads WHERE request = '' AND id NOT IN
+	_, err := j.db.Exec(`DELETE FROM downloads WHERE request = '' AND stream = '' AND id NOT IN
 		(SELECT id FROM downloads ORDER BY id DESC LIMIT ?)`, keep)
 	return err
 }

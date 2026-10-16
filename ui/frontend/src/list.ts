@@ -1,4 +1,4 @@
-import {AddToQueue, AddURL, CheckEngine, CheckServer, Download, Downloads, MoveInQueue, NewerVersion, OpenFile, OpenReleasesPage, PauseDownload, QueueInfo, ReceivedMedia, RemoveDownloads, RemoveFromQueue, ResumeDownload, ShowInFolder, ShowOptions, ShowProgress, StartQueue, StopQueue} from '../wailsjs/go/main/App';
+import {AddToQueue, AddURL, AddURLs, CheckEngine, CheckServer, Download, Downloads, MoveInQueue, NewerVersion, OpenFile, OpenReleasesPage, PauseDownload, QueueInfo, ReceivedMedia, RemoveDownloads, RemoveFromQueue, ResumeDownload, Settings, ShowInFolder, ShowOptions, ShowProgress, StartQueue, StopQueue} from '../wailsjs/go/main/App';
 import {ClipboardGetText} from '../wailsjs/runtime/runtime';
 import {$, duration, el, msg, percent, size} from './util';
 
@@ -35,7 +35,7 @@ function typeOf(name: string) {
     return '';
 }
 
-const RUNNING = new Set(['checking', 'downloading', 'joining', 'waiting']);
+const RUNNING = new Set(['checking', 'downloading', 'joining', 'waiting', 'verifying']);
 const isRunning = (d: Status) => RUNNING.has(d.state);
 
 // --- Categories ---
@@ -123,6 +123,7 @@ function statusOf(d: Status): {text: string, cls: string, title: string} {
     case 'done': return {text: 'Complete', cls: 'ok', title};
     case 'checking': return {text: 'Connecting…', cls: '', title};
     case 'joining': return {text: 'Joining video and audio…', cls: '', title};
+    case 'verifying': return {text: 'Checking SHA-256…', cls: '', title};
     case 'waiting': return {text: d.error || 'Waiting to try again', cls: '', title};
     case 'downloading':
         if (d.parts) return {text: `Segment ${d.partsDone ?? 0} of ${d.parts}`, cls: '', title};
@@ -455,7 +456,7 @@ function updateToolbar() {
     $<HTMLButtonElement>('tb-queue-stop').disabled = !queue.running;
 }
 
-$('tb-add').addEventListener('click', openAdd);
+$('tb-add').addEventListener('click', () => openAdd());
 $('tb-resume').addEventListener('click', () => resume(pick()));
 $('tb-stop').addEventListener('click', () => stop(pick()));
 $('tb-stop-all').addEventListener('click', () => stop(all));
@@ -545,15 +546,43 @@ document.addEventListener('keydown', (e) => {
 // --- Add URL ---
 
 const addDialog = $<HTMLDialogElement>('add-dialog');
-const addInput = $<HTMLInputElement>('add-url');
+const addInput = $<HTMLTextAreaElement>('add-url');
 
-async function openAdd() {
-    addInput.value = '';
+// links picks the web addresses out of text: one per line, or a pasted
+// list with anything between them.
+function links(text: string): string[] {
+    const seen = new Set<string>();
+    for (const m of text.matchAll(/https?:\/\/[^\s"'<>]+/gi)) seen.add(m[0]);
+    return [...seen];
+}
+
+// Says what Download will do with what is in the box.
+function syncAdd() {
+    const n = links(addInput.value).length;
+    $('add-later-row').hidden = n < 2;
+    $('add-ok').textContent = n > 1 ? (laterBox().checked ? `Queue ${n} links` : `Download ${n} links`) : 'Download';
+}
+const laterBox = () => $<HTMLInputElement>('add-later');
+addInput.addEventListener('input', syncAdd);
+laterBox().addEventListener('change', syncAdd);
+
+// openAdd opens Add URL with text's links, or the clipboard's.
+async function openAdd(text?: string) {
+    if (addDialog.open) {
+        if (text) addInput.value = [...new Set([...links(addInput.value), ...links(text)])].join('\n');
+        syncAdd();
+        return;
+    }
     $('add-error').textContent = '';
-    try {
-        const clip = (await ClipboardGetText()).trim();
-        if (/^https?:\/\/\S+$/i.test(clip)) addInput.value = clip;
-    } catch { /* an empty box is fine */ }
+    if (text === undefined) {
+        text = '';
+        try {
+            text = await ClipboardGetText();
+        } catch { /* an empty box is fine */ }
+    }
+    addInput.value = links(text).join('\n');
+    laterBox().checked = false;
+    syncAdd();
     addDialog.showModal();
     addInput.select();
 }
@@ -561,9 +590,19 @@ async function openAdd() {
 $('add-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const ok = $<HTMLButtonElement>('add-ok');
+    const list = links(addInput.value);
     ok.disabled = true;
     try {
-        const added = await AddURL(addInput.value);
+        if (list.length > 1) {
+            const later = laterBox().checked;
+            await AddURLs(list, later).catch((err) => { notice(msg(err)); });
+            addDialog.close();
+            if (view.id !== 'all' && view.id !== 'unfinished') setView(VIEWS[0]);
+            await refreshDownloads();
+            return;
+        }
+        // One link, or what was typed, which the engine checks.
+        const added = await AddURL(list[0] ?? addInput.value.trim());
         addDialog.close();
         // The Download File Info box takes it from here.
         if (added.asked) return;
@@ -580,6 +619,55 @@ $('add-form').addEventListener('submit', async (e) => {
     }
 });
 $('add-cancel').addEventListener('click', () => addDialog.close());
+addInput.addEventListener('keydown', (e) => {
+    // Enter alone adds a line; Ctrl+Enter downloads, as Enter did before.
+    if (e.key === 'Enter' && e.ctrlKey) {
+        e.preventDefault();
+        $<HTMLFormElement>('add-form').requestSubmit();
+    }
+});
+
+// --- Links dropped onto the window or copied ---
+
+const dropped = (e: DragEvent) => e.dataTransfer?.getData('text/uri-list') || e.dataTransfer?.getData('text/plain') || '';
+const canDrop = (e: DragEvent) => !!e.dataTransfer && (e.dataTransfer.types.includes('text/uri-list') || e.dataTransfer.types.includes('text/plain'));
+document.addEventListener('dragover', (e) => {
+    if (!canDrop(e)) return;
+    e.preventDefault();
+    e.dataTransfer!.dropEffect = 'copy';
+    document.body.classList.add('dropping');
+});
+document.addEventListener('dragleave', (e) => {
+    if (!e.relatedTarget) document.body.classList.remove('dropping');
+});
+document.addEventListener('drop', (e) => {
+    document.body.classList.remove('dropping');
+    if (!canDrop(e)) return;
+    e.preventDefault();
+    const text = dropped(e);
+    if (links(text).length) openAdd(text);
+    else notice('That has no web address to download.');
+});
+
+// With the setting on, coming back to the window offers links copied
+// since: once each, and not while another box is open.
+let lastClip: string | null = null;
+async function offerClipboard() {
+    if (addDialog.open || document.querySelector('dialog[open]')) return;
+    let text = '';
+    try {
+        if ((await Settings()).clip !== '1') return;
+        text = await ClipboardGetText();
+    } catch {
+        return;
+    }
+    const first = lastClip === null;
+    if (text === lastClip) return;
+    lastClip = text;
+    if (!first && links(text).length) openAdd(text);
+}
+window.addEventListener('focus', offerClipboard);
+offerClipboard(); // what is there when the window opens isn't offered
 
 // --- Engine status and totals ---
 
