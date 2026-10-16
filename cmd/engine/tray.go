@@ -149,7 +149,8 @@ func syncCheck(item *systray.MenuItem, on bool) {
 }
 
 // showWindow opens one of ui.exe's small windows: --ask=ID for the Download
-// File Info box, --progress=ID for a download's progress, --options.
+// File Info box, --progress=ID for a download's progress, --options, or
+// --power for the countdown before the computer sleeps or turns off.
 func showWindow(args ...string) error {
 	p := windowPath()
 	if _, err := os.Stat(p); err != nil {

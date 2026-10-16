@@ -26,6 +26,10 @@ export function CancelDownload(arg1) {
   return window['go']['main']['App']['CancelDownload'](arg1);
 }
 
+export function CancelPower() {
+  return window['go']['main']['App']['CancelPower']();
+}
+
 export function CheckEngine() {
   return window['go']['main']['App']['CheckEngine']();
 }
@@ -88,6 +92,18 @@ export function OptionsTab() {
 
 export function PauseDownload(arg1) {
   return window['go']['main']['App']['PauseDownload'](arg1);
+}
+
+export function PowerInfo() {
+  return window['go']['main']['App']['PowerInfo']();
+}
+
+export function PowerNow() {
+  return window['go']['main']['App']['PowerNow']();
+}
+
+export function PowerWindow() {
+  return window['go']['main']['App']['PowerWindow']();
 }
 
 export function ProgressID() {

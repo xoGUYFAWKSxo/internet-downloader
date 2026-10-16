@@ -20,6 +20,9 @@ type queueState struct {
 	// skip holds the downloads that stopped during this run (paused by
 	// hand, or failed): they aren't started again until the queue is.
 	skip map[uint64]bool
+	// started tells that this run started or had a download, so that its
+	// end counts as the queue finishing.
+	started bool
 }
 
 type QueueInfo = fetch.QueueInfo
@@ -41,7 +44,7 @@ func (e *engine) lastInQueue() int {
 
 func (e *engine) startQueue(by string) {
 	e.dl.mu.Lock()
-	e.q.running, e.q.skip = true, map[uint64]bool{}
+	e.q.running, e.q.skip, e.q.started = true, map[uint64]bool{}, false
 	e.dl.mu.Unlock()
 	fmt.Fprintf(e.log, "queue: started by %s\n", by)
 	e.pumpQueue()
@@ -90,10 +93,15 @@ func (e *engine) pumpQueue() {
 	}
 	if busy == 0 && len(next) == 0 {
 		e.q.running = false
+		started := e.q.started
 		e.dl.mu.Unlock()
 		fmt.Fprintln(e.log, "queue: nothing left to start; stopped")
+		if started {
+			e.queueFinished()
+		}
 		return
 	}
+	e.q.started = true
 	sort.Slice(next, func(a, b int) bool { return next[a].Queue < next[b].Queue })
 	next = next[:max(0, min(len(next), most-busy))]
 	for _, j := range next {

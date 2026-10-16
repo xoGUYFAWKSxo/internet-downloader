@@ -17,6 +17,8 @@ export function AskInfo(arg1:number):Promise<fetch.AskInfo>;
 
 export function CancelDownload(arg1:number):Promise<void>;
 
+export function CancelPower():Promise<void>;
+
 export function CheckEngine():Promise<main.EngineStatus>;
 
 export function CheckServer(arg1:number):Promise<probe.Result>;
@@ -48,6 +50,12 @@ export function OpenReleasesPage():Promise<void>;
 export function OptionsTab():Promise<string>;
 
 export function PauseDownload(arg1:number):Promise<void>;
+
+export function PowerInfo():Promise<main.PowerInfo>;
+
+export function PowerNow():Promise<void>;
+
+export function PowerWindow():Promise<boolean>;
 
 export function ProgressID():Promise<number>;
 

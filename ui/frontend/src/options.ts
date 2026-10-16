@@ -42,7 +42,13 @@ const PAGE = `
     </section>
     <section data-panel="queue">
         <label class="check">Download <input type="number" id="opt-max" min="1" max="10" step="1"> files at the same time from the queue</label>
-        <p class="note">Download Later puts a link in the queue, and "Add to queue" on the list's right-click menu adds a stopped download. Start Queue runs it in order; it stops when nothing is left.</p>
+        <label class="check">When the queue finishes
+            <select id="opt-when">
+                <option value="">do nothing</option>
+                <option value="sleep">put the computer to sleep</option>
+                <option value="off">turn the computer off</option>
+            </select></label>
+        <p class="note">Download Later puts a link in the queue, and "Add to queue" on the list's right-click menu adds a stopped download. Start Queue runs it in order; it stops when nothing is left. Sleep or turning off waits a minute first, with a window to cancel it; it doesn't happen when you stop the queue yourself.</p>
     </section>
     <section data-panel="scheduler">
         <label class="check"><input type="checkbox" id="opt-sched"> Start the queue at <input type="time" id="opt-start"></label>
@@ -136,6 +142,7 @@ export function start(tab: string) {
         $<HTMLTextAreaElement>('opt-sites').value = s.catchSites;
         input('opt-types').value = s.catchTypes;
         input('opt-max').value = s.queueMax;
+        $<HTMLSelectElement>('opt-when').value = s.whenDone ?? '';
         input('opt-sched').checked = s.sched === '1';
         input('opt-start').value = s.schedStart;
         input('opt-stop-on').checked = s.schedStop !== '';
@@ -178,6 +185,7 @@ export function start(tab: string) {
                 catchSites: $<HTMLTextAreaElement>('opt-sites').value,
                 catchTypes: input('opt-types').value,
                 queueMax: input('opt-max').value.trim(),
+                whenDone: $<HTMLSelectElement>('opt-when').value,
                 sched: on(sched),
                 schedStart: input('opt-start').value || saved,
                 schedStop: input('opt-stop-on').checked ? input('opt-stop').value : '',

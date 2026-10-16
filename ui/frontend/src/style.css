@@ -270,7 +270,7 @@ body.progress-window { background: var(--chrome); }
 .opt section[hidden] { display: none; }
 .opt section > label:not(.check) { margin-top: 4px; }
 .opt input[type=number] { width: 90px; }
-.opt input[type=number], .opt input[type=time] { padding: 3px 6px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 2px; }
+.opt input[type=number], .opt input[type=time], .opt select { padding: 3px 6px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 2px; }
 .opt input:disabled { opacity: 0.55; }
 .opt .log { height: 230px; font: 11px Consolas, monospace; white-space: pre; overflow: auto; resize: none; }
 .pw-hash { display: flex; gap: 6px; align-items: center; }
@@ -284,3 +284,7 @@ body.progress-window { background: var(--chrome); }
 .tabs button:hover { background: var(--hover); }
 .tabs button.current { background: var(--bg); border-color: var(--border); }
 .days { display: flex; flex-wrap: wrap; gap: 4px 14px; padding-left: 22px; }
+
+/* The countdown before sleep or turning off */
+.power p { margin: 0; }
+.power .pw-buttons { margin-top: auto; }
