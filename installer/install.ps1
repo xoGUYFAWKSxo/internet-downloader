@@ -99,6 +99,12 @@ if ($ffmpeg) {
     Write-Warning 'FFmpeg not found on PATH: streams with separate sound and picture will not be joined.'
 }
 
+# A fresh icon file each time, as the installer does: Windows keeps its own
+# copy of each icon by file name and misses a new picture in ui.exe.
+Remove-Item (Join-Path $InstallDir 'GalacticDownloader*.ico') -ErrorAction SilentlyContinue
+$icon = Join-Path $InstallDir ('GalacticDownloader-{0}.ico' -f (Get-Date -Format 'yyyyMMddHHmmss'))
+Copy-Item (Join-Path $PSScriptRoot '..\ui\build\windows\icon.ico') $icon
+
 $shell = New-Object -ComObject WScript.Shell
 $targets = if ($NoDesktopShortcut) { @($Shortcuts[0]) } else { $Shortcuts }
 foreach ($s in $targets) {
@@ -106,6 +112,7 @@ foreach ($s in $targets) {
     $lnk.TargetPath = Join-Path $InstallDir 'ui.exe'
     $lnk.WorkingDirectory = $InstallDir
     $lnk.Description = $Name
+    $lnk.IconLocation = "$icon,0"
     $lnk.Save()
 }
 

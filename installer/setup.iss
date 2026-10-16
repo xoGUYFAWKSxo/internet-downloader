@@ -57,12 +57,18 @@ Name: desktopicon; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm
 
 [Files]
 Source: "{#Stage}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
+; The shortcuts take their icon from a file named for the version: Windows
+; keeps its own copy of each icon by file name and misses a new picture in
+; the same ui.exe, so a new name makes it read the icon again.
+Source: "..\ui\build\windows\icon.ico"; DestDir: "{app}"; DestName: "GalacticDownloader-{#AppVersion}.ico"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\{#AppName}"; Filename: "{app}\ui.exe"; WorkingDir: "{app}"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\ui.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autoprograms}\{#AppName}"; Filename: "{app}\ui.exe"; WorkingDir: "{app}"; IconFilename: "{app}\GalacticDownloader-{#AppVersion}.ico"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\ui.exe"; WorkingDir: "{app}"; IconFilename: "{app}\GalacticDownloader-{#AppVersion}.ico"; Tasks: desktopicon
 
 [InstallDelete]
+; The icon file of the version installed before.
+Type: files; Name: "{app}\GalacticDownloader*.ico"
 ; Shortcuts from before the rename.
 Type: files; Name: "{autoprograms}\Internet Downloader.lnk"
 Type: files; Name: "{autodesktop}\Internet Downloader.lnk"
@@ -75,9 +81,6 @@ Root: HKCU; Subkey: "Software\Microsoft\Edge\NativeMessagingHosts\{#HostName}"; 
 Root: HKCU; Subkey: "Software\Mozilla\NativeMessagingHosts\{#HostName}"; ValueType: string; ValueName: ""; ValueData: "{app}\firefox-host.json"; Flags: uninsdeletekey
 
 [Run]
-; Windows keeps its own copy of each program's icon and misses a new one in
-; an update, so shortcuts can show an older icon; this refreshes the copy.
-Filename: "{sys}\ie4uinit.exe"; Parameters: "-show"; Flags: runhidden skipifdoesntexist
 Filename: "{app}\ui.exe"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
