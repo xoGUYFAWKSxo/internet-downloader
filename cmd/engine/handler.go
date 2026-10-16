@@ -70,10 +70,18 @@ type engine struct {
 }
 
 func newEngine(log io.Writer) *engine {
-	return &engine{inbox: media.NewInbox(100), log: log, now: time.Now, dir: downloadDir(), ffmpeg: stream.FFmpeg(),
+	return &engine{inbox: media.NewInbox(keepReceived), log: log, now: time.Now, dir: downloadDir(), ffmpeg: stream.FFmpeg(),
 		retries: []time.Duration{5 * time.Second, 15 * time.Second, 45 * time.Second}, checkpointEvery: 3 * time.Second, limit: fetch.NewLimiter(),
 		version: version.Version, upd: updates{url: latestRelease, client: &http.Client{}}, powerDelay: time.Minute}
 }
+
+// keepReceived is how many items from the extension are kept; streams among
+// them are saved for receivedFor, so a restart doesn't lose them. Files aren't
+// saved, as each one is downloaded or asked about at once.
+const (
+	keepReceived = 100
+	receivedFor  = 24 * time.Hour
+)
 
 type idRequest struct {
 	ID uint64 `json:"id"`
@@ -413,6 +421,11 @@ func (e *engine) addMedia(browser string, c media.Context) ipc.Message {
 	host := hostOf(c.URL)
 	fmt.Fprintf(e.log, "received %s stream from %s: %s (%d cookies, %d-byte manifest)\n",
 		c.Kind, browser, host, len(c.Cookies), len(c.Manifest))
+	if it, ok := e.inbox.Get(id); ok && e.jr != nil && c.Kind != media.KindFile {
+		if err := e.jr.SaveReceived(it, keepReceived, e.now().Add(-receivedFor)); err != nil {
+			fmt.Fprintf(e.log, "couldn't save the stream from %s, so it goes when the app stops: %v\n", host, err)
+		}
+	}
 	return ipc.Message{Type: "media.added", Payload: payload(map[string]any{"id": id})}
 }
 

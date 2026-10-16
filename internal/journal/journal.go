@@ -8,7 +8,8 @@
 //
 // A download's request (with its cookies and headers), or a stream's, is
 // kept only while the download can still be resumed, and is wiped when it
-// ends.
+// ends. Streams the extension found, with their cookies, are kept for as long
+// as the engine offers them (a day), then deleted.
 package journal
 
 import (
@@ -16,10 +17,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	_ "modernc.org/sqlite"
 
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/fetch"
+	"github.com/xoGUYFAWKSxo/internet-downloader/internal/media"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/outfile"
 	"github.com/xoGUYFAWKSxo/internet-downloader/internal/probe"
 )
@@ -42,6 +45,11 @@ CREATE INDEX IF NOT EXISTS ranges_download ON ranges(download);
 CREATE TABLE IF NOT EXISTS settings (
 	key   TEXT PRIMARY KEY,
 	value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS received (
+	id   INTEGER PRIMARY KEY,  -- the engine's media.Item ID
+	at   INTEGER NOT NULL,     -- when it came, Unix seconds
+	item TEXT NOT NULL         -- media.Item as JSON, cookies included
 );
 `
 
@@ -195,6 +203,52 @@ func (j *Journal) End(s fetch.Status) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// SaveReceived keeps a stream the extension found, and forgets the oldest
+// beyond keep and those found before since.
+func (j *Journal) SaveReceived(it media.Item, keep int, since time.Time) error {
+	b, err := json.Marshal(it)
+	if err != nil {
+		return err
+	}
+	tx, err := j.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`INSERT OR REPLACE INTO received (id, at, item) VALUES (?, ?, ?)`, it.ID, it.Received.Unix(), string(b)); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM received WHERE at < ? OR id NOT IN (SELECT id FROM received ORDER BY id DESC LIMIT ?)`, since.Unix(), keep); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// LoadReceived deletes the streams found before since and gives the others,
+// oldest first.
+func (j *Journal) LoadReceived(since time.Time) ([]media.Item, error) {
+	if _, err := j.db.Exec(`DELETE FROM received WHERE at < ?`, since.Unix()); err != nil {
+		return nil, err
+	}
+	rows, err := j.db.Query(`SELECT item FROM received ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []media.Item
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		var it media.Item
+		if json.Unmarshal([]byte(s), &it) == nil && it.ID != 0 {
+			out = append(out, it)
+		}
+	}
+	return out, rows.Err()
 }
 
 // Delete forgets a download, with its ranges.
