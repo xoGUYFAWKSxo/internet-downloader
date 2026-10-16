@@ -34,6 +34,8 @@ type App struct {
 	ask uint64
 	// options is the tab the Options window opened at, or "" in others.
 	options string
+	// power tells that this is the countdown before sleep or turning off.
+	power bool
 }
 
 // The progress window's size, without and with its details.
@@ -45,6 +47,8 @@ const (
 	askHeight       = 318
 	optionsWidth    = 540
 	optionsHeight   = 400
+	powerWidth      = 440
+	powerHeight     = 170
 )
 
 func (a *App) startup(ctx context.Context) { a.ctx = ctx }
@@ -54,6 +58,10 @@ func (a *App) startup(ctx context.Context) { a.ctx = ctx }
 func (a *App) shutdown(context.Context) {
 	if a.ask != 0 {
 		a.call(ipc.Message{Type: "asks.cancel", Payload: idPayload(a.ask)})
+	}
+	// Closing the countdown is cancelling it.
+	if a.power {
+		a.call(ipc.Message{Type: "power.cancel"})
 	}
 }
 
@@ -323,6 +331,32 @@ func (a *App) GrowWindow(px int) {
 // OptionsTab is the tab the Options window opened at, or "" in other
 // windows.
 func (a *App) OptionsTab() string { return a.options }
+
+// PowerWindow tells that this is the countdown before the computer sleeps
+// or turns off, when the queue has finished.
+func (a *App) PowerWindow() bool { return a.power }
+
+// PowerInfo is what will happen when the countdown ends, and in how many
+// seconds; Action is "" once it has been cancelled or done.
+func (a *App) PowerInfo() (PowerInfo, error) {
+	var out PowerInfo
+	return out, decode(a.call(ipc.Message{Type: "power.get"}))(&out)
+}
+
+// CancelPower stops the countdown.
+func (a *App) CancelPower() error {
+	return decode(a.call(ipc.Message{Type: "power.cancel"}))(nil)
+}
+
+// PowerNow sleeps or turns off without waiting for the countdown.
+func (a *App) PowerNow() error {
+	return decode(a.call(ipc.Message{Type: "power.now"}))(nil)
+}
+
+type PowerInfo struct {
+	Action string `json:"action,omitempty"`
+	Left   int    `json:"left,omitempty"`
+}
 
 // ShowOptions opens the Options window at tab, or brings it forward.
 func (a *App) ShowOptions(tab string) error {

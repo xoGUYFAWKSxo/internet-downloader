@@ -62,12 +62,17 @@ type engine struct {
 	// version is this app's; upd is what the update check found.
 	version string
 	upd     updates
+	// power, if set, puts the computer to sleep or turns it off, after a
+	// countdown of powerDelay that pw keeps.
+	power      func(action string) error
+	powerDelay time.Duration
+	pw         powerState
 }
 
 func newEngine(log io.Writer) *engine {
 	return &engine{inbox: media.NewInbox(100), log: log, now: time.Now, dir: downloadDir(), ffmpeg: stream.FFmpeg(),
 		retries: []time.Duration{5 * time.Second, 15 * time.Second, 45 * time.Second}, checkpointEvery: 3 * time.Second, limit: fetch.NewLimiter(),
-		version: version.Version, upd: updates{url: latestRelease, client: &http.Client{}}}
+		version: version.Version, upd: updates{url: latestRelease, client: &http.Client{}}, powerDelay: time.Minute}
 }
 
 type idRequest struct {
@@ -260,6 +265,16 @@ func (e *engine) handle(m ipc.Message) ipc.Message {
 			return fail(err.Error())
 		}
 		return ipc.Message{Type: "queue.move"}
+	case "power.get":
+		return ipc.Message{Type: "power.get", Payload: payload(e.powerInfo())}
+	case "power.cancel":
+		e.cancelPower("the user")
+		return ipc.Message{Type: "power.cancel"}
+	case "power.now":
+		if err := e.powerNow("the user"); err != nil {
+			return fail(err.Error())
+		}
+		return ipc.Message{Type: "power.now"}
 	case "update.get":
 		// version is "" when this is the latest, or the check is off or failed.
 		return ipc.Message{Type: "update.get", Payload: payload(map[string]string{"version": e.newerVersion(), "page": releasesPage})}

@@ -59,13 +59,14 @@ const (
 	setCatchSites = "catchSites" // and those from these sites, one per line
 	setCatchTypes = "catchTypes" // and these file types, space-separated extensions
 	setClip       = "clip"       // "1": the window offers links copied to the clipboard
+	setWhenDone   = "whenDone"   // when the queue finishes: "", "sleep" or "off"
 )
 
 var settingDefaults = map[string]string{
 	setAsk: "1", setDone: "1", setLimit: "0", setLimitKB: "1024", setQueueMax: "2",
 	setSched: "0", setSchedStart: "02:00", setSchedStop: "", setSchedDays: "0123456",
 	setUpdates: "1", setAwake: "1", setCatchMin: "1", setCatchSites: "", setCatchTypes: "",
-	setClip: "0",
+	setClip: "0", setWhenDone: "",
 }
 
 func (e *engine) setting(key string) string {
@@ -146,6 +147,10 @@ func checkSetting(key, value string) error {
 		}
 		if _, err := time.Parse("15:04", value); err != nil {
 			return errors.New("Times should look like 23:30.")
+		}
+	case setWhenDone:
+		if value != "" && value != powerSleep && value != powerOff {
+			return errors.New("invalid setting value")
 		}
 	case setSchedDays:
 		for _, c := range value {

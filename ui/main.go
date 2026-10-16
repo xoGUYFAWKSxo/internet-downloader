@@ -20,8 +20,11 @@ import (
 var assets embed.FS
 
 func main() {
-	app := &App{progress: idArg(os.Args[1:], "--progress="), ask: idArg(os.Args[1:], "--ask="), options: optionsArg(os.Args[1:])}
+	app := &App{progress: idArg(os.Args[1:], "--progress="), ask: idArg(os.Args[1:], "--ask="), options: optionsArg(os.Args[1:]), power: hasArg(os.Args[1:], "--power")}
 	switch {
+	case app.power:
+		runSmall(app, "Galactic Downloader", powerWidth, powerHeight, "power")
+		return
 	case app.options != "":
 		runSmall(app, "Options", optionsWidth, optionsHeight, "options")
 		return
@@ -65,6 +68,15 @@ func idArg(args []string, prefix string) uint64 {
 		}
 	}
 	return 0
+}
+
+func hasArg(args []string, want string) bool {
+	for _, a := range args {
+		if a == want {
+			return true
+		}
+	}
+	return false
 }
 
 // optionsArg reads --options, which opens the Options window, or
