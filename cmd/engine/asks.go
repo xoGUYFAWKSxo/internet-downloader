@@ -59,14 +59,24 @@ const (
 	setCatchSites = "catchSites" // and those from these sites, one per line
 	setCatchTypes = "catchTypes" // and these file types, space-separated extensions
 	setClip       = "clip"       // "1": the window offers links copied to the clipboard
-	setWhenDone   = "whenDone"   // when the queue finishes: "", "sleep" or "off"
+	setWhenDone   = "whenDone"   // when the queue finishes: "", "sleep", "hibernate", "off" or "restart"
 )
+
+// Each category of the main window can have a folder of its own, as in IDM:
+// the setting "dir.video" is the Video category's, "" for the download folder.
+const setDirPrefix = "dir."
 
 var settingDefaults = map[string]string{
 	setAsk: "1", setDone: "1", setLimit: "0", setLimitKB: "1024", setQueueMax: "2",
 	setSched: "0", setSchedStart: "02:00", setSchedStop: "", setSchedDays: "0123456",
 	setUpdates: "1", setAwake: "1", setCatchMin: "1", setCatchSites: "", setCatchTypes: "",
 	setClip: "0", setWhenDone: "",
+}
+
+func init() {
+	for c := range categories {
+		settingDefaults[setDirPrefix+c] = ""
+	}
 }
 
 func (e *engine) setting(key string) string {
@@ -89,6 +99,9 @@ func (e *engine) setSetting(key, value string) error {
 // setSettings checks every value before saving any, so the Options window
 // saves all or nothing.
 func (e *engine) setSettings(m map[string]string) error {
+	if m[setWhenDone] == powerHibernate && e.canHibernate != nil && !e.canHibernate() {
+		return errNoHibernate
+	}
 	for k, v := range m {
 		if clean, ok := cleanSetting[k]; ok {
 			c, err := clean(v)
@@ -149,7 +162,9 @@ func checkSetting(key, value string) error {
 			return errors.New("Times should look like 23:30.")
 		}
 	case setWhenDone:
-		if value != "" && value != powerSleep && value != powerOff {
+		switch value {
+		case "", powerSleep, powerHibernate, powerOff, powerRestart:
+		default:
 			return errors.New("invalid setting value")
 		}
 	case setSchedDays:
@@ -159,6 +174,12 @@ func checkSetting(key, value string) error {
 			}
 		}
 	default:
+		if c, ok := strings.CutPrefix(key, setDirPrefix); ok && categories[c].label != "" {
+			if value != "" && !filepath.IsAbs(value) {
+				return fmt.Errorf("The folder for %s should be a full path, like C:\\Downloads\\%s, or empty.", categories[c].label, categories[c].label)
+			}
+			return nil
+		}
 		return fmt.Errorf("unknown setting %q", key)
 	}
 	return nil
@@ -201,11 +222,14 @@ func (e *engine) saveDir() string {
 func (e *engine) newAsk(c media.Context) uint64 {
 	stream := c.Kind == media.KindHLS || c.Kind == media.KindDASH
 	a := &ask{made: e.now(), media: c, stream: stream,
-		info: AskInfo{Host: hostOf(c.URL), Size: -1, Stream: stream, Dir: e.saveDir()}}
+		info: AskInfo{Host: hostOf(c.URL), Size: -1, Stream: stream}}
 	if stream {
+		// Most likely an MP4; the type is picked when the tracks are joined.
 		a.info.Name, a.info.Resume = streamName(c), "yes"
+		a.info.Dir = e.dirFor(a.info.Name + ".mp4")
 	} else {
 		a.info.Name, a.info.Checking = fileNameOf(c.URL), true
+		a.info.Dir = e.dirFor(a.info.Name)
 	}
 	a.info.Same, a.info.SameID, a.info.SameName = e.sameLink(c.URL)
 	e.asks.mu.Lock()
@@ -261,6 +285,10 @@ func (e *engine) checkAsk(a *ask, r probe.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	res, name, err := e.probeFile(ctx, r)
+	dir := ""
+	if err == nil {
+		dir = e.dirFor(name) // before the lock, which settings may take
+	}
 	e.asks.mu.Lock()
 	defer e.asks.mu.Unlock()
 	a.info.Checking = false
@@ -269,7 +297,7 @@ func (e *engine) checkAsk(a *ask, r probe.Request) {
 		a.info.Error = sentence(err)
 		return
 	}
-	a.info.Name, a.info.Size, a.info.Resume = name, res.Size, "no"
+	a.info.Name, a.info.Size, a.info.Resume, a.info.Dir = name, res.Size, "no", dir
 	if fetch.Validator(res) != "" && res.Size > 0 && res.Plan.Mode != probe.Single {
 		a.info.Resume = "yes"
 	}
@@ -317,8 +345,10 @@ func (e *engine) answerAsk(id uint64, dir, name string, later bool, sum string) 
 	if !ok {
 		return 0, errors.New("That link is no longer waiting; send it from the browser again.")
 	}
-	if err := e.setSetting(setDir, dir); err != nil {
-		fmt.Fprintf(e.log, "couldn't save the folder: %v\n", err)
+	if c := e.catDir(name); c == "" || !strings.EqualFold(filepath.Clean(c), dir) {
+		if err := e.setSetting(setDir, dir); err != nil {
+			fmt.Fprintf(e.log, "couldn't save the folder: %v\n", err)
+		}
 	}
 	set := func(j *job) { j.dir, j.name, j.Name, j.SHA256 = dir, name, name, sum }
 	r := request(a.media)

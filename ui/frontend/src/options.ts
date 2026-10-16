@@ -4,6 +4,9 @@ import {ChooseFolder, EngineLog, SaveSettings, Settings, ShowLog} from '../wails
 import {ClipboardSetText, Quit, WindowSetTitle} from '../wailsjs/runtime/runtime';
 import {$, msg} from './util';
 
+// The main window's categories, which can each have a folder.
+const FOLDERS: [string, string][] = [['compressed', 'Compressed'], ['documents', 'Documents'], ['music', 'Music'], ['programs', 'Programs'], ['video', 'Video']];
+
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const ORDER = [1, 2, 3, 4, 5, 6, 0]; // Monday first
 
@@ -11,6 +14,7 @@ const PAGE = `
 <form class="ask opt" id="opt-form">
     <div class="tabs" role="tablist">
         <button type="button" data-tab="general">General</button>
+        <button type="button" data-tab="folders">Folders</button>
         <button type="button" data-tab="browser">Browser</button>
         <button type="button" data-tab="speed">Speed limiter</button>
         <button type="button" data-tab="queue">Queue</button>
@@ -26,6 +30,10 @@ const PAGE = `
         <label for="opt-dir">Download folder</label>
         <div class="ask-row"><input type="text" id="opt-dir" spellcheck="false"><button type="button" id="opt-browse">Browse…</button></div>
         <p class="note">The Download File Info box changes this to the folder you last saved into.</p>
+    </section>
+    <section data-panel="folders">
+        <table class="pw-info opt-folders" id="opt-folders"></table>
+        <p class="note">Files of these types are saved into their folder, made if it isn't there; empty uses the download folder. The Download File Info box offers it, and you can still pick another.</p>
     </section>
     <section data-panel="browser">
         <label class="check">Take the browser's downloads of <input type="number" id="opt-min" min="1" max="1000000" step="1"> MB and larger</label>
@@ -46,9 +54,11 @@ const PAGE = `
             <select id="opt-when">
                 <option value="">do nothing</option>
                 <option value="sleep">put the computer to sleep</option>
+                <option value="hibernate">hibernate the computer</option>
                 <option value="off">turn the computer off</option>
+                <option value="restart">restart the computer</option>
             </select></label>
-        <p class="note">Download Later puts a link in the queue, and "Add to queue" on the list's right-click menu adds a stopped download. Start Queue runs it in order; it stops when nothing is left. Sleep or turning off waits a minute first, with a window to cancel it; it doesn't happen when you stop the queue yourself.</p>
+        <p class="note">Download Later puts a link in the queue, and "Add to queue" on the list's right-click menu adds a stopped download. Start Queue runs it in order; it stops when nothing is left. Sleep, hibernating, turning off or restarting waits a minute first, with a window to cancel it; it doesn't happen when you stop the queue yourself.</p>
     </section>
     <section data-panel="scheduler">
         <label class="check"><input type="checkbox" id="opt-sched"> Start the queue at <input type="time" id="opt-start"></label>
@@ -85,6 +95,23 @@ export function start(tab: string) {
         return l;
     }));
     const days = () => Array.from(document.querySelectorAll<HTMLInputElement>('#opt-days input'));
+    $('opt-folders').replaceChildren(...FOLDERS.map(([key, label]) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<th><label for="opt-dir-${key}">${label}</label></th>
+            <td><div class="ask-row"><input type="text" id="opt-dir-${key}" spellcheck="false" placeholder="The download folder"><button type="button" data-browse="${key}">Browse…</button></div></td>`;
+        return tr;
+    }));
+    for (const b of Array.from(document.querySelectorAll<HTMLElement>('[data-browse]'))) {
+        b.addEventListener('click', async () => {
+            const f = input(`opt-dir-${b.dataset.browse}`);
+            try {
+                const d = await ChooseFolder(f.value || input('opt-dir').value);
+                if (d) f.value = d;
+            } catch (e) {
+                err.textContent = msg(e);
+            }
+        });
+    }
 
     const show = (t: string) => {
         for (const b of Array.from(document.querySelectorAll<HTMLElement>('[data-tab]'))) b.classList.toggle('current', b.dataset.tab === t);
@@ -136,6 +163,7 @@ export function start(tab: string) {
         input('opt-updates').checked = s.updates === '1';
         input('opt-clip').checked = s.clip === '1';
         input('opt-dir').value = s.dir;
+        for (const [key] of FOLDERS) input(`opt-dir-${key}`).value = s[`dir.${key}`] ?? '';
         input('opt-limit').checked = s.limit === '1';
         input('opt-kb').value = s.limitKB;
         input('opt-min').value = s.catchMinMB;
@@ -172,7 +200,10 @@ export function start(tab: string) {
         }
         const on = (b: boolean) => b ? '1' : '0';
         try {
+            const folders: Record<string, string> = {};
+            for (const [key] of FOLDERS) folders[`dir.${key}`] = input(`opt-dir-${key}`).value.trim();
             await SaveSettings({
+                ...folders,
                 ask: on(input('opt-ask').checked),
                 done: on(input('opt-done').checked),
                 awake: on(input('opt-awake').checked),

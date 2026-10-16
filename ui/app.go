@@ -41,12 +41,12 @@ type App struct {
 // The progress window's size, without and with its details.
 const (
 	progressWidth   = 520
-	progressHeight  = 330
-	progressDetails = 590
+	progressHeight  = 358
+	progressDetails = 618
 	askWidth        = 560
 	askHeight       = 318
 	optionsWidth    = 540
-	optionsHeight   = 400
+	optionsHeight   = 420
 	powerWidth      = 440
 	powerHeight     = 170
 )
@@ -150,6 +150,13 @@ func (a *App) CancelDownload(id uint64) error {
 // ResumeDownload carries on with a paused or failed download.
 func (a *App) ResumeDownload(id uint64) error {
 	return decode(a.call(ipc.Message{Type: "downloads.resume", Payload: idPayload(id)}))(nil)
+}
+
+// SetDownloadLimit sets one download's own speed limit in KB/s; 0 takes it
+// off. The limit Options sets for all downloads applies as well.
+func (a *App) SetDownloadLimit(id uint64, kb int64) error {
+	p, _ := json.Marshal(map[string]any{"id": id, "kb": kb})
+	return decode(a.call(ipc.Message{Type: "downloads.limit", Payload: p}))(nil)
 }
 
 // PauseDownload stops a running download, keeping what is in when it can be

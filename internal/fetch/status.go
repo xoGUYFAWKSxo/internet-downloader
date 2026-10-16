@@ -38,6 +38,9 @@ type Status struct {
 	// SHA256 is the checksum the user gave, in lower case. A download that
 	// has one is done only when the finished file matches it.
 	SHA256 string `json:"sha256,omitempty"`
+	// LimitKB is this download's own speed limit in KB/s, or 0 for none.
+	// The limit all downloads share applies as well.
+	LimitKB int64 `json:"limitKB,omitempty"`
 }
 
 // Detail is what a download's progress window shows.

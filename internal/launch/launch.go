@@ -57,7 +57,43 @@ func EnsureWith(ctx context.Context, pipe, engine, log string) error {
 
 // LogPath is where a started engine writes its log.
 func LogPath() string {
-	return filepath.Join(os.Getenv("LOCALAPPDATA"), "InternetDownloader", "engine.log")
+	return filepath.Join(DataDir(), "engine.log")
+}
+
+// PortableMark is the file that, next to the programs, makes them keep
+// everything in a "data" folder beside them: the portable zip has one.
+const PortableMark = "portable.txt"
+
+// DataDir is the folder for the log, the download list and the window's
+// own files: %LOCALAPPDATA%\InternetDownloader, or "data" beside the
+// programs in the portable version.
+func DataDir() string {
+	self, err := os.Executable()
+	if err != nil {
+		self = ""
+	}
+	return dataDir(self, os.Getenv("LOCALAPPDATA"))
+}
+
+// Portable tells whether this program is the portable version.
+func Portable() bool {
+	self, err := os.Executable()
+	return err == nil && portable(self)
+}
+
+func portable(self string) bool {
+	if self == "" {
+		return false
+	}
+	fi, err := os.Stat(filepath.Join(filepath.Dir(self), PortableMark))
+	return err == nil && fi.Mode().IsRegular()
+}
+
+func dataDir(self, localAppData string) string {
+	if portable(self) {
+		return filepath.Join(filepath.Dir(self), "data")
+	}
+	return filepath.Join(localAppData, "InternetDownloader")
 }
 
 func running(ctx context.Context, pipe string) bool {

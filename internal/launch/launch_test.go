@@ -80,3 +80,24 @@ func TestEnsureMissingEngine(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// The portable version keeps its data beside the programs.
+func TestDataDir(t *testing.T) {
+	dir := t.TempDir()
+	self := filepath.Join(dir, "engine.exe")
+	if got := dataDir(self, `C:\Users\x\AppData\Local`); got != `C:\Users\x\AppData\Local\InternetDownloader` {
+		t.Fatalf("installed: %s", got)
+	}
+	if err := os.WriteFile(filepath.Join(dir, PortableMark), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := dataDir(self, `C:\Users\x\AppData\Local`); got != filepath.Join(dir, "data") {
+		t.Fatalf("portable: %s", got)
+	}
+	// A folder of that name isn't the mark.
+	other := t.TempDir()
+	os.Mkdir(filepath.Join(other, PortableMark), 0o755)
+	if portable(filepath.Join(other, "ui.exe")) {
+		t.Fatal("a folder counted as the mark")
+	}
+}

@@ -1,8 +1,8 @@
 <#
 .SYNOPSIS
 Builds a release into dist\release: GalacticDownloader-<version>-setup.exe
-(Inno Setup 6), the extension zipped for each browser store, and their
-SHA-256 sums. The programs carry the version; FFmpeg is a pinned build,
+(Inno Setup 6), the same programs as a portable zip, the extension zipped
+for each browser store, and their SHA-256 sums. The programs carry the version; FFmpeg is a pinned build,
 checked against its SHA-256 before it goes in.
 
 .EXAMPLE
@@ -144,6 +144,21 @@ FFmpeg-README.txt.
     & (Join-Path $PSScriptRoot 'register-native-host.ps1') -WriteManifestsTo $Stage
 
     Invoke-Native 'Inno Setup' { & $Iscc /Q "/DAppVersion=$Version" "/DStage=$Stage" "/DOutDir=$Out" (Join-Path $PSScriptRoot 'setup.iss') }
+
+    # The portable zip: the installer's files, plus the mark that keeps the
+    # data beside them and the scripts that connect the browsers.
+    $Port = Join-Path $Out 'portable'
+    $PortDir = Join-Path $Port 'Galactic Downloader'
+    New-Item -ItemType Directory -Path $PortDir -Force | Out-Null
+    Copy-Item (Join-Path $Stage '*') $PortDir -Recurse
+    foreach ($f in 'portable.txt', 'Connect browsers.cmd', 'Disconnect browsers.cmd') {
+        $text = [IO.File]::ReadAllText((Join-Path $PSScriptRoot "portable\$f")) -replace '\{version\}', $Version
+        if ($f -like '*.cmd') { $text = $text -replace "`r?`n", "`r`n" }
+        Write-Text (Join-Path $PortDir $f) $text
+    }
+    $zip = Join-Path $Out "GalacticDownloader-$Version-portable.zip"
+    Invoke-Native 'zipping the portable version' { & $tar -a -c -f $zip -C $Port 'Galactic Downloader' }
+    Remove-Item $Port -Recurse -Force
 
     $sums = Get-ChildItem $Out -File | Sort-Object Name | ForEach-Object {
         "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"

@@ -38,13 +38,18 @@ export function start(id: number) {
     const name = $<HTMLInputElement>('ask-name');
     const err = $('ask-error');
     let typed = false; // the user's own name wins over the server's
+    let picked = false; // and their folder over the one for the file's type
     let info: Info | null = null;
     name.addEventListener('input', () => { typed = true; });
+    dir.addEventListener('input', () => { picked = true; });
 
     const show = (a: Info) => {
         info = a;
         $('ask-host').textContent = a.host || '—';
-        if (!dir.value) dir.value = a.dir;
+        if (!picked && a.dir && dir.value !== a.dir) {
+            dir.value = a.dir;
+            checkTarget();
+        }
         if (!typed) name.value = a.name;
         $('ask-size').textContent = a.checking ? 'Checking…' : a.size >= 0 ? size(a.size) : 'Unknown';
         $('ask-resume').textContent = a.checking ? 'Checking…' : a.resume === 'yes' ? 'Yes' : 'No';
@@ -113,6 +118,7 @@ export function start(id: number) {
             const d = await ChooseFolder(dir.value);
             if (d) {
                 dir.value = d;
+                picked = true;
                 checkTarget();
             }
         } catch (e) {
