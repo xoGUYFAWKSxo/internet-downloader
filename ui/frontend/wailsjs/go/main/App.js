@@ -10,6 +10,10 @@ export function AddURL(arg1) {
   return window['go']['main']['App']['AddURL'](arg1);
 }
 
+export function AddURLs(arg1, arg2) {
+  return window['go']['main']['App']['AddURLs'](arg1, arg2);
+}
+
 export function AskID() {
   return window['go']['main']['App']['AskID']();
 }
@@ -48,6 +52,14 @@ export function DownloadDetail(arg1) {
 
 export function Downloads() {
   return window['go']['main']['App']['Downloads']();
+}
+
+export function EngineLog() {
+  return window['go']['main']['App']['EngineLog']();
+}
+
+export function FileSHA256(arg1) {
+  return window['go']['main']['App']['FileSHA256'](arg1);
 }
 
 export function GrowWindow(arg1) {
@@ -122,6 +134,10 @@ export function ShowInFolder(arg1) {
   return window['go']['main']['App']['ShowInFolder'](arg1);
 }
 
+export function ShowLog() {
+  return window['go']['main']['App']['ShowLog']();
+}
+
 export function ShowOptions(arg1) {
   return window['go']['main']['App']['ShowOptions'](arg1);
 }
@@ -130,8 +146,8 @@ export function ShowProgress(arg1) {
   return window['go']['main']['App']['ShowProgress'](arg1);
 }
 
-export function StartAsk(arg1, arg2, arg3, arg4) {
-  return window['go']['main']['App']['StartAsk'](arg1, arg2, arg3, arg4);
+export function StartAsk(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['StartAsk'](arg1, arg2, arg3, arg4, arg5);
 }
 
 export function StartQueue() {

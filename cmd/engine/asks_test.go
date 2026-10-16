@@ -203,15 +203,18 @@ func TestAskLimits(t *testing.T) {
 			t.Errorf("%s: %+v", m.Payload, r)
 		}
 	}
-	// A stream can't wait in the list; its name comes from the page.
+	// A stream's name comes from the page, and it can wait in the list.
 	r := e.handle(ipc.Message{Type: "asks.add", Payload: payload(map[string]string{"url": "https://a.test/v/master.m3u8"})})
 	var in idRequest
 	json.Unmarshal(r.Payload, &in)
-	if a := askInfoOf(t, e, in.ID); !a.Stream || a.Name != "a.test" || a.Resume != "no" {
+	if a := askInfoOf(t, e, in.ID); !a.Stream || a.Name != "a.test" || a.Resume != "yes" {
 		t.Fatalf("stream: %+v", a)
 	}
-	if r := answer(e, in.ID, t.TempDir(), "v", true); r.Type != "error" || !strings.Contains(r.Error, "stream") {
+	if r := answer(e, in.ID, t.TempDir(), "v", true); r.Type != "asks.start" {
 		t.Fatalf("stream later: %+v", r)
+	}
+	if d := e.dl.list()[0]; d.State != fetch.Paused || !d.Resumable || e.dl.find(d.ID).stream == nil {
+		t.Fatalf("stream waiting: %+v", d)
 	}
 	// Boxes never answered are forgotten.
 	now := time.Now()

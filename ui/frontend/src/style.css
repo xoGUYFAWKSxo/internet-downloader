@@ -217,7 +217,9 @@ dialog {
 dialog::backdrop { background: rgba(0, 0, 0, 0.25); }
 dialog h2 { font-size: 15px; font-weight: 600; margin: 0 0 12px; }
 dialog p { margin: 10px 0; }
-dialog input[type=text] { width: 100%; margin-top: 4px; padding: 5px 8px; font: inherit; user-select: text; }
+dialog input[type=text], dialog textarea { width: 100%; margin-top: 4px; padding: 5px 8px; font: inherit; user-select: text; }
+dialog textarea { resize: vertical; white-space: pre; overflow-x: auto; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 2px; }
+body.dropping .table-wrap { outline: 2px dashed var(--accent); outline-offset: -4px; }
 dialog .check { display: flex; align-items: center; gap: 6px; }
 dialog .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 dialog .buttons button { min-width: 84px; padding: 5px 12px; }
@@ -270,6 +272,11 @@ body.progress-window { background: var(--chrome); }
 .opt input[type=number] { width: 90px; }
 .opt input[type=number], .opt input[type=time] { padding: 3px 6px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 2px; }
 .opt input:disabled { opacity: 0.55; }
+.opt .log { height: 230px; font: 11px Consolas, monospace; white-space: pre; overflow: auto; resize: none; }
+.pw-hash { display: flex; gap: 6px; align-items: center; }
+.pw-hash input { flex: 1; min-width: 0; padding: 2px 6px; font: inherit; user-select: text; }
+.pw-hash-out { word-break: break-all; }
+#pw-hash-row td, #pw-status.bad { white-space: normal; }
 .opt textarea { width: 100%; padding: 4px 6px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 2px; resize: vertical; user-select: text; }
 .ask #ask-same button { padding: 1px 8px; font-size: 12px; }
 .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }

@@ -58,7 +58,7 @@ func main() {
 		l.Close()
 	}()
 	fmt.Fprintln(os.Stderr, "engine", version.Version, "listening on", name)
-	e := newEngine(os.Stderr)
+	e := newEngine(redacted{os.Stderr})
 	e.show = showWindow
 	if jr, err := journal.Open(journalPath()); err != nil {
 		// Downloads still work; the list just isn't kept.

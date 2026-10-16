@@ -9,6 +9,8 @@ export function AddToQueue(arg1:Array<number>):Promise<void>;
 
 export function AddURL(arg1:string):Promise<main.Added>;
 
+export function AddURLs(arg1:Array<string>,arg2:boolean):Promise<number>;
+
 export function AskID():Promise<number>;
 
 export function AskInfo(arg1:number):Promise<fetch.AskInfo>;
@@ -28,6 +30,10 @@ export function Download(arg1:number):Promise<number>;
 export function DownloadDetail(arg1:number):Promise<fetch.Detail>;
 
 export function Downloads():Promise<Array<fetch.Status>>;
+
+export function EngineLog():Promise<string>;
+
+export function FileSHA256(arg1:string):Promise<string>;
 
 export function GrowWindow(arg1:number):Promise<void>;
 
@@ -65,11 +71,13 @@ export function ShowDetails(arg1:boolean):Promise<void>;
 
 export function ShowInFolder(arg1:string):Promise<void>;
 
+export function ShowLog():Promise<void>;
+
 export function ShowOptions(arg1:string):Promise<void>;
 
 export function ShowProgress(arg1:number):Promise<void>;
 
-export function StartAsk(arg1:number,arg2:string,arg3:string,arg4:boolean):Promise<number>;
+export function StartAsk(arg1:number,arg2:string,arg3:string,arg4:boolean,arg5:string):Promise<number>;
 
 export function StartQueue():Promise<void>;
 

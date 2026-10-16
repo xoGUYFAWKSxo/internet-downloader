@@ -1,11 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,7 +42,7 @@ const (
 	progressHeight  = 330
 	progressDetails = 590
 	askWidth        = 560
-	askHeight       = 290
+	askHeight       = 318
 	optionsWidth    = 540
 	optionsHeight   = 400
 )
@@ -179,6 +183,31 @@ func (a *App) AddURL(u string) (Added, error) {
 	return out, a.open(fmt.Sprintf("--ask=%d", out.ID))
 }
 
+// AddURLs downloads several addresses at once into the folder last used,
+// with no box, or with later adds them to the queue. It gives how many were
+// added; an error says how many weren't.
+func (a *App) AddURLs(urls []string, later bool) (int, error) {
+	added := 0
+	var last error
+	for _, u := range urls {
+		p, _ := json.Marshal(map[string]any{"url": u, "later": later})
+		if err := decode(a.call(ipc.Message{Type: "downloads.add", Payload: p}))(nil); err != nil {
+			last = err
+			continue
+		}
+		added++
+	}
+	switch left := len(urls) - added; {
+	case left == 1 && len(urls) == 1:
+		return added, last
+	case left == 1:
+		return added, fmt.Errorf("1 of the %d links wasn't added: %v", len(urls), last)
+	case left > 1:
+		return added, fmt.Errorf("%d of the %d links weren't added. The last one: %v", left, len(urls), last)
+	}
+	return added, nil
+}
+
 // AskID is the link this Download File Info box is for, or 0 in other
 // windows.
 func (a *App) AskID() uint64 { return a.ask }
@@ -191,9 +220,10 @@ func (a *App) AskInfo(id uint64) (fetch.AskInfo, error) {
 }
 
 // StartAsk downloads the link into dir under name, or with later adds it
-// to the list to start with Resume. It returns the download's id.
-func (a *App) StartAsk(id uint64, dir, name string, later bool) (uint64, error) {
-	p, _ := json.Marshal(map[string]any{"id": id, "dir": dir, "name": name, "later": later})
+// to the list to start with Resume. sum, if not "", is the SHA-256 the file
+// must have. It returns the download's id.
+func (a *App) StartAsk(id uint64, dir, name string, later bool, sum string) (uint64, error) {
+	p, _ := json.Marshal(map[string]any{"id": id, "dir": dir, "name": name, "later": later, "sha256": sum})
 	var out idOnly
 	return out.ID, decode(a.call(ipc.Message{Type: "asks.start", Payload: p}))(&out)
 }
@@ -403,6 +433,62 @@ func (a *App) ShowInFolder(path string) error {
 	// Explorer's exit code is 1 even when it worked, so it isn't checked.
 	exec.Command("explorer.exe", "/select,", path).Start()
 	return nil
+}
+
+// FileSHA256 works out the SHA-256 of a finished download, in lower case.
+func (a *App) FileSHA256(path string) (string, error) {
+	if err := existingFile(path); err != nil {
+		return "", err
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", fmt.Errorf("couldn't read the file: %w", err)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// maxLogShown is how much of the end of the engine's log Options shows.
+const maxLogShown = 256 << 10
+
+// EngineLog gives the end of the download engine's log, whole lines only.
+func (a *App) EngineLog() (string, error) {
+	return logTail(launch.LogPath(), maxLogShown)
+}
+
+func logTail(path string, most int64) (string, error) {
+	f, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", errors.New("There is no log yet: the engine writes one once the window or the browser has started it.")
+	}
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return "", err
+	}
+	from := max(0, fi.Size()-most)
+	b := make([]byte, fi.Size()-from)
+	if _, err := f.ReadAt(b, from); err != nil && !errors.Is(err, io.EOF) {
+		return "", err
+	}
+	if from > 0 {
+		if i := bytes.IndexByte(b, '\n'); i >= 0 {
+			b = b[i+1:]
+		}
+	}
+	return string(b), nil
+}
+
+// ShowLog opens the folder with the engine's log, the log selected.
+func (a *App) ShowLog() error {
+	return a.ShowInFolder(launch.LogPath())
 }
 
 func idPayload(id uint64) json.RawMessage {

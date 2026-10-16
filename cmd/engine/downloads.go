@@ -2,11 +2,16 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -46,14 +51,16 @@ type job struct {
 	// can be resumed.
 	resume string
 
-	// To resume a file: its request (nil for streams, which can't resume),
-	// the unfinished file, the server's size and validator it came from,
-	// and the spans known to be on disk.
+	// To resume a file: its request (nil for streams), the unfinished
+	// file, the server's size and validator it came from, and the spans
+	// known to be on disk.
 	req       *probe.Request
 	part      string
 	size      int64
 	validator string
 	have      []outfile.Range
+	// stream is set for a stream, with what resuming it needs.
+	stream *streamState
 	// dir and name are where the user chose to save the file; "" for
 	// Downloads and the server's name. Set before the job first runs.
 	dir, name string
@@ -124,8 +131,10 @@ func (e *engine) detail(id uint64) (fetch.Detail, error) {
 		d.Status.Done, d.Status.PartsDone = j.progress()
 	}
 	switch {
+	case j.stream != nil && e.jr != nil:
+		d.Resume = "yes" // by segment
 	case j.req == nil:
-		d.Resume = "no" // streams start over
+		d.Resume = "no"
 	case d.Resume == "" && j.Resumable:
 		d.Resume = "yes"
 	}
@@ -198,6 +207,9 @@ func (e *engine) newJob(u string, req *probe.Request, set func(*job)) *job {
 		if err != nil {
 			fmt.Fprintf(e.log, "download %d (%s): couldn't save it to the list: %v\n", j.ID, j.host, err)
 		}
+		if j.stream != nil {
+			e.saveStream(j)
+		}
 	}
 	return j
 }
@@ -218,6 +230,14 @@ func (e *engine) launch(j *job, run func(context.Context, *job)) {
 // download starts a plain file download.
 func (e *engine) download(r probe.Request) uint64 {
 	return e.start(r.URL, &r, e.runFile)
+}
+
+// runner gives what downloads j.
+func (e *engine) runner(j *job) func(context.Context, *job) {
+	if j.stream != nil {
+		return e.runStreamJob
+	}
+	return e.runFile
 }
 
 // runFile downloads a file. A dropped connection is retried after a pause,
@@ -383,13 +403,16 @@ func (e *engine) stopped(ctx context.Context, j *job, err error) {
 	shutdown := errors.Is(context.Cause(ctx), errShutdown)
 	paused := errors.Is(context.Cause(ctx), errPaused)
 	e.dl.mu.Lock()
-	canResume := e.jr != nil && j.req != nil && j.part != "" && j.validator != "" && !byUser
-	if !canResume && j.part != "" {
+	canResume := e.jr != nil && !byUser && (j.req != nil && j.part != "" && j.validator != "" || j.stream != nil && j.stream.Work != "")
+	if j.part != "" && (!canResume || j.stream != nil) {
+		// A stream's file is made afresh when it resumes.
 		os.Remove(j.part)
 		j.part, j.have = "", nil
 	}
+	work := ""
 	if !canResume {
 		j.Queue = 0
+		work = takeWork(j)
 	}
 	state := fetch.Failed
 	switch {
@@ -413,32 +436,82 @@ func (e *engine) stopped(ctx context.Context, j *job, err error) {
 	}
 	j.progress = nil
 	e.dl.mu.Unlock()
+	removeWork(work)
 	fmt.Fprintf(e.log, "download %d (%s): %s: %v\n", j.ID, j.host, state, err)
 	if canResume {
 		e.save(j)
+		if j.stream != nil {
+			e.jr.SetFile(j.ID, "", -1, "")
+		}
 	} else {
 		e.end(j)
 	}
 }
 
-// done records where j's file went.
+// done records where j's file went, once it matches the SHA-256 the user
+// gave, if any.
 func (e *engine) done(j *job, path string, size int64) {
 	fmt.Fprintf(e.log, "download %d (%s): done, %d bytes\n", j.ID, j.host, size)
+	if err := outfile.MarkFromInternet(path, j.from, j.referrer); err != nil {
+		// The file is complete; it just lacks the tag (FAT32 and exFAT have no place for it).
+		fmt.Fprintf(e.log, "download %d (%s): couldn't mark the file as from the internet: %v\n", j.ID, j.host, err)
+	}
+	if err := e.verify(j, path, size); err != nil {
+		fmt.Fprintf(e.log, "download %d (%s): %v\n", j.ID, j.host, err)
+		e.dl.update(j, func(j *job) {
+			j.State, j.Path, j.Name, j.Done, j.Error = fetch.Failed, path, filepath.Base(path), size, sentence(err)
+			j.Size, j.PartsDone, j.progress = size, j.Parts, nil
+			j.part, j.have, j.Queue, j.Resumable = "", nil, 0, false
+		})
+		e.end(j)
+		return
+	}
 	e.dl.update(j, func(j *job) {
 		j.State, j.Path, j.Name, j.Done, j.Error = fetch.Done, path, filepath.Base(path), size, ""
 		j.Size, j.PartsDone, j.progress = size, j.Parts, nil
 		j.part, j.have, j.Queue = "", nil, 0
 	})
-	if err := outfile.MarkFromInternet(path, j.from, j.referrer); err != nil {
-		// The file is complete; it just lacks the tag (FAT32 and exFAT have no place for it).
-		fmt.Fprintf(e.log, "download %d (%s): couldn't mark the file as from the internet: %v\n", j.ID, j.host, err)
-	}
 	e.end(j)
 	if e.show != nil && e.setting(setDone) == "1" {
 		if err := e.show(fmt.Sprintf("--progress=%d", j.ID)); err != nil {
 			fmt.Fprintf(e.log, "download %d: couldn't show that it finished: %v\n", j.ID, err)
 		}
 	}
+}
+
+// verify compares the finished file at path with the SHA-256 the user gave.
+func (e *engine) verify(j *job, path string, size int64) error {
+	e.dl.mu.Lock()
+	want := j.SHA256
+	if want != "" {
+		j.State, j.Done, j.progress = fetch.Verifying, size, nil
+	}
+	e.dl.mu.Unlock()
+	if want == "" {
+		return nil
+	}
+	got, err := fileSHA256(path)
+	if err != nil {
+		return fmt.Errorf("the file downloaded, but its SHA-256 couldn't be worked out: %w", err)
+	}
+	if got != want {
+		return errors.New("the file downloaded, but its SHA-256 doesn't match the one you gave, so it may be damaged or not the file you expected. It was kept, so you can check it")
+	}
+	fmt.Fprintf(e.log, "download %d (%s): its SHA-256 matches\n", j.ID, j.host)
+	return nil
+}
+
+func fileSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // save writes j's status to the saved list.
@@ -536,7 +609,9 @@ func (e *engine) cancelDownload(id uint64) error {
 	}
 	j.part, j.have, j.Resumable, j.Queue = "", nil, false, 0
 	j.State, j.Error = fetch.Cancelled, "Cancelled."
+	work := takeWork(j)
 	e.dl.mu.Unlock()
+	removeWork(work)
 	fmt.Fprintf(e.log, "download %d (%s): unfinished file discarded\n", j.ID, j.host)
 	e.end(j)
 	return nil
@@ -591,7 +666,9 @@ func (e *engine) removeDownloads(ids []uint64, deleteFiles bool) error {
 			files = append(files, j.Path)
 		}
 		e.dl.jobs = append(e.dl.jobs[:at], e.dl.jobs[at+1:]...)
+		work := takeWork(j)
 		e.dl.mu.Unlock()
+		removeWork(work)
 		for _, f := range files {
 			if err := os.Remove(f); err != nil && !errors.Is(err, os.ErrNotExist) {
 				failed++
@@ -615,13 +692,23 @@ func (e *engine) removeDownloads(ids []uint64, deleteFiles bool) error {
 	return nil
 }
 
-// addURL downloads an address typed or pasted into the window.
-func (e *engine) addURL(raw string) (uint64, error) {
+// addURL downloads an address typed, pasted or dropped into the window, or
+// with later adds it to the queue.
+func (e *engine) addURL(raw string, later bool) (uint64, error) {
 	u, err := webAddress(raw)
 	if err != nil {
 		return 0, err
 	}
-	return e.download(probe.Request{URL: u}), nil
+	c := media.Context{URL: u, Kind: streamKind(u)}
+	r := request(c)
+	req, run, set := &r, e.runFile, func(*job) {}
+	if c.Kind != "" {
+		req, run, set = nil, e.runStreamJob, func(j *job) { j.stream = &streamState{Media: c} }
+	}
+	if later {
+		return e.queueLater(u, req, set), nil
+	}
+	return e.startJob(u, req, set, run), nil
 }
 
 func webAddress(raw string) (string, error) {
@@ -647,7 +734,7 @@ func (e *engine) resumeDownload(id uint64) error {
 	e.dl.mu.Unlock()
 	fmt.Fprintf(e.log, "download %d (%s): resuming\n", j.ID, j.host)
 	e.save(j)
-	e.launch(j, e.runFile)
+	e.launch(j, e.runner(j))
 	return nil
 }
 
@@ -663,27 +750,38 @@ func (e *engine) restore(jr *journal.Journal) error {
 	if err != nil {
 		return err
 	}
-	// Work folders of streams cut off by a crash.
-	if old, _ := filepath.Glob(filepath.Join(e.dir, workPrefix+"*")); len(old) > 0 {
-		for _, p := range old {
-			os.RemoveAll(p)
-		}
-	}
 	for _, r := range recs {
 		j := &job{Status: r.Status, req: r.Request, part: r.Part, size: r.Size, validator: r.Validator, have: r.Have, dir: r.Dir, name: r.Name, cancel: func(error) {}}
 		if r.Request != nil {
 			j.host, j.from, j.referrer = hostOf(r.Request.URL), r.Request.URL, r.Request.Referer
 		}
+		if st := new(streamState); r.Stream != "" && json.Unmarshal([]byte(r.Stream), st) == nil {
+			j.stream = st
+			j.host, j.from, j.referrer = hostOf(st.Media.URL), st.Media.URL, st.Media.Referer
+		}
 		wasRunning := false
 		switch j.State {
-		case fetch.Checking, fetch.Downloading, fetch.Waiting, fetch.Joining:
+		case fetch.Checking, fetch.Downloading, fetch.Waiting, fetch.Joining, fetch.Verifying:
 			wasRunning = true
 		}
 		if wasRunning || j.Resumable {
 			// With no file yet (added to start later, or stopped before
 			// the server answered), there is nothing to lose by starting.
-			ok := j.req != nil && (j.part == "" || j.validator != "" && fileExists(j.part))
+			ok := j.req != nil && (j.part == "" || j.validator != "" && fileExists(j.part)) ||
+				j.stream != nil && (j.stream.Work == "" || dirExists(j.stream.Work))
 			switch {
+			case ok && j.stream != nil:
+				if j.part != "" {
+					os.Remove(j.part) // made afresh on resuming
+					j.part = ""
+					jr.SetFile(j.ID, "", -1, "")
+				}
+				j.State, j.Resumable, j.Streams = fetch.Paused, true, 0
+				j.Done, j.PartsDone = j.stream.saved()
+				if wasRunning {
+					j.Error = "Paused: the app stopped during this download."
+				}
+				e.save(j)
 			case ok:
 				j.State, j.Resumable = fetch.Paused, true
 				j.Done, j.Streams = covered(j.have), 0
@@ -695,6 +793,7 @@ func (e *engine) restore(jr *journal.Journal) error {
 				if j.part != "" {
 					os.Remove(j.part)
 				}
+				removeWork(takeWork(j))
 				j.part, j.have, j.Resumable, j.State, j.Streams, j.Queue = "", nil, false, fetch.Failed, 0, 0
 				j.Error = "The app stopped during this download; send it from the browser again."
 				if !wasRunning {
@@ -706,7 +805,22 @@ func (e *engine) restore(jr *journal.Journal) error {
 		e.dl.jobs = append(e.dl.jobs, j)
 		e.dl.next = max(e.dl.next, j.ID)
 	}
+	// Work folders no paused stream needs: cut off by a crash, or left by
+	// an app from before streams could resume.
+	old, _ := filepath.Glob(filepath.Join(e.dir, workPrefix+"*"))
+	for _, p := range old {
+		if !slices.ContainsFunc(e.dl.jobs, func(j *job) bool {
+			return j.stream != nil && j.stream.Work != "" && strings.EqualFold(filepath.Clean(j.stream.Work), filepath.Clean(p))
+		}) {
+			os.RemoveAll(p)
+		}
+	}
 	return nil
+}
+
+func dirExists(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && fi.IsDir()
 }
 
 func fileExists(p string) bool {
@@ -735,7 +849,7 @@ func (e *engine) running() int {
 
 func isRunning(state string) bool {
 	switch state {
-	case fetch.Checking, fetch.Downloading, fetch.Joining, fetch.Waiting:
+	case fetch.Checking, fetch.Downloading, fetch.Joining, fetch.Waiting, fetch.Verifying:
 		return true
 	}
 	return false

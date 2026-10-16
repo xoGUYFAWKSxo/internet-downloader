@@ -9,7 +9,8 @@ A download manager for Windows 10 and 11, with a browser extension for Chrome, E
 - Downloads files over several connections at once: HTTP/3 or HTTP/2 when the server supports it, otherwise up to 4 HTTP/1.1 connections, or one when the server allows nothing else.
 - Resumes after a dropped connection, a closed app or a crash, fetching only the parts still missing, when the server supports it.
 - With the extension, takes over the browser's own downloads of 1 MB and larger (you can raise the size, and leave chosen sites and file types to the browser), and adds "Download link with Galactic Downloader" to the right-click menu.
-- Finds HLS and DASH video streams on a page and downloads them, joining separate video and sound into one file with FFmpeg (included). Streams can't be resumed yet.
+- Finds HLS and DASH video streams on a page and downloads them, joining separate video and sound into one file with FFmpeg (included). They resume by segment, like files.
+- Add URL takes one link or a whole list, and links can be dropped onto the window. An optional SHA-256 checks the finished file.
 - A window laid out like Internet Download Manager: categories, a progress window per download, a box asking where to save each link, a queue, a scheduler and a speed limit.
 - Marks downloaded files as from the internet, as browsers do. Keeps the computer awake while downloading, and checks once a day for a new version; both can be turned off in Options.
 - Copy-protected (DRM) streams are refused. YouTube's own player isn't supported.

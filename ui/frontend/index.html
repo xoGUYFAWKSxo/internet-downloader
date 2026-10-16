@@ -48,9 +48,10 @@
 <dialog id="add-dialog">
     <form method="dialog" id="add-form">
         <h2>Add URL</h2>
-        <label for="add-url">Address to download</label>
-        <input id="add-url" type="text" spellcheck="false" autocomplete="off" placeholder="https://"/>
-        <p class="note">Saved in your Downloads folder. Downloads that need you to be signed in work better from the browser's right-click menu, which sends your cookies along.</p>
+        <label for="add-url">Addresses to download, one per line</label>
+        <textarea id="add-url" rows="4" spellcheck="false" autocomplete="off" placeholder="https://"></textarea>
+        <label class="check" id="add-later-row" hidden><input type="checkbox" id="add-later"/> Add them to the queue instead of starting them now</label>
+        <p class="note" id="add-note">You can also drop a link onto the window. Downloads that need you to be signed in work better from the browser's right-click menu, which sends your cookies along.</p>
         <p class="bad" id="add-error"></p>
         <div class="buttons">
             <button type="submit" id="add-ok" class="primary">Download</button>

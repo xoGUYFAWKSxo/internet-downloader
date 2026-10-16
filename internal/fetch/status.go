@@ -4,9 +4,10 @@ package fetch
 const (
 	Checking    = "checking"
 	Downloading = "downloading"
-	Joining     = "joining" // FFmpeg is joining the tracks of a stream
-	Waiting     = "waiting" // the connection dropped; trying again soon
-	Paused      = "paused"  // stopped with the app; can be resumed
+	Joining     = "joining"   // FFmpeg is joining the tracks of a stream
+	Verifying   = "verifying" // working out the file's SHA-256 to compare
+	Waiting     = "waiting"   // the connection dropped; trying again soon
+	Paused      = "paused"    // stopped with the app; can be resumed
 	Done        = "done"
 	Failed      = "failed"
 	Cancelled   = "cancelled"
@@ -34,6 +35,9 @@ type Status struct {
 	// Queue is the download's place in the queue, lowest first; 0 when it
 	// isn't queued.
 	Queue int `json:"queue,omitempty"`
+	// SHA256 is the checksum the user gave, in lower case. A download that
+	// has one is done only when the finished file matches it.
+	SHA256 string `json:"sha256,omitempty"`
 }
 
 // Detail is what a download's progress window shows.
@@ -69,7 +73,7 @@ type AskInfo struct {
 	// Resume is "yes" or "no" once the server has answered.
 	Resume string `json:"resume"`
 	// Stream is an HLS or DASH stream: its file type is picked when it is
-	// joined, and it can't wait in the list, as it can't be resumed.
+	// joined.
 	Stream bool   `json:"stream"`
 	Error  string `json:"error,omitempty"`
 	Dir    string `json:"dir"` // the folder offered

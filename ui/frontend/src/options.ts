@@ -1,7 +1,7 @@
 // The Options window: the engine's settings in one place, with the
 // scheduler on a tab of its own, as IDM's Scheduler button opens.
-import {ChooseFolder, SaveSettings, Settings} from '../wailsjs/go/main/App';
-import {Quit, WindowSetTitle} from '../wailsjs/runtime/runtime';
+import {ChooseFolder, EngineLog, SaveSettings, Settings, ShowLog} from '../wailsjs/go/main/App';
+import {ClipboardSetText, Quit, WindowSetTitle} from '../wailsjs/runtime/runtime';
 import {$, msg} from './util';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -15,12 +15,14 @@ const PAGE = `
         <button type="button" data-tab="speed">Speed limiter</button>
         <button type="button" data-tab="queue">Queue</button>
         <button type="button" data-tab="scheduler">Scheduler</button>
+        <button type="button" data-tab="log">Log</button>
     </div>
     <section data-panel="general">
         <label class="check"><input type="checkbox" id="opt-ask"> Show the Download File Info box for links from the browser and Add URL</label>
         <label class="check"><input type="checkbox" id="opt-done"> Show a box when a download finishes</label>
         <label class="check"><input type="checkbox" id="opt-awake"> Keep the computer awake while downloading</label>
         <label class="check"><input type="checkbox" id="opt-updates"> Check once a day for a new version of the app</label>
+        <label class="check"><input type="checkbox" id="opt-clip"> When I switch to the window, offer to download links I copied</label>
         <label for="opt-dir">Download folder</label>
         <div class="ask-row"><input type="text" id="opt-dir" spellcheck="false"><button type="button" id="opt-browse">Browse…</button></div>
         <p class="note">The Download File Info box changes this to the folder you last saved into.</p>
@@ -48,6 +50,15 @@ const PAGE = `
         <label class="check"><input type="checkbox" id="opt-stop-on"> Stop the queue at <input type="time" id="opt-stop"></label>
         <p class="note">This works while the app is running, with its icon in the tray; it doesn't wake the computer.</p>
     </section>
+    <section data-panel="log">
+        <textarea class="log" id="opt-log" readonly spellcheck="false"></textarea>
+        <div class="ask-row">
+            <button type="button" id="opt-log-copy">Copy</button>
+            <button type="button" id="opt-log-refresh">Refresh</button>
+            <button type="button" id="opt-log-folder">Show the file</button>
+        </div>
+        <p class="note">What the download engine did, newest at the bottom: useful to attach to a bug report. It has the names of servers but not full addresses, cookies or passwords.</p>
+    </section>
     <p class="bad" id="opt-error"></p>
     <div class="pw-buttons">
         <span class="spacer"></span>
@@ -73,8 +84,32 @@ export function start(tab: string) {
         for (const b of Array.from(document.querySelectorAll<HTMLElement>('[data-tab]'))) b.classList.toggle('current', b.dataset.tab === t);
         for (const p of Array.from(document.querySelectorAll<HTMLElement>('[data-panel]'))) p.hidden = p.dataset.panel !== t;
     };
-    for (const b of Array.from(document.querySelectorAll<HTMLElement>('[data-tab]'))) b.addEventListener('click', () => show(b.dataset.tab!));
-    show(document.querySelector(`[data-tab="${tab}"]`) ? tab : 'general');
+    const log = $<HTMLTextAreaElement>('opt-log');
+    const loadLog = async () => {
+        try {
+            log.value = await EngineLog();
+        } catch (e) {
+            log.value = msg(e);
+        }
+        log.scrollTop = log.scrollHeight;
+    };
+    let logLoaded = false;
+    const shown = show;
+    const showTab = (t: string) => {
+        shown(t);
+        if (t === 'log' && !logLoaded) {
+            logLoaded = true;
+            loadLog();
+        }
+    };
+    for (const b of Array.from(document.querySelectorAll<HTMLElement>('[data-tab]'))) b.addEventListener('click', () => showTab(b.dataset.tab!));
+    showTab(document.querySelector(`[data-tab="${tab}"]`) ? tab : 'general');
+    $('opt-log-refresh').addEventListener('click', loadLog);
+    $('opt-log-copy').addEventListener('click', async () => {
+        const ok = await ClipboardSetText(log.value).catch(() => false);
+        err.textContent = ok ? '' : "Couldn't copy the log.";
+    });
+    $('opt-log-folder').addEventListener('click', () => ShowLog().catch((e) => { err.textContent = msg(e); }));
 
     const sync = () => {
         input('opt-kb').disabled = !input('opt-limit').checked;
@@ -93,6 +128,7 @@ export function start(tab: string) {
         input('opt-done').checked = s.done === '1';
         input('opt-awake').checked = s.awake === '1';
         input('opt-updates').checked = s.updates === '1';
+        input('opt-clip').checked = s.clip === '1';
         input('opt-dir').value = s.dir;
         input('opt-limit').checked = s.limit === '1';
         input('opt-kb').value = s.limitKB;
@@ -134,6 +170,7 @@ export function start(tab: string) {
                 done: on(input('opt-done').checked),
                 awake: on(input('opt-awake').checked),
                 updates: on(input('opt-updates').checked),
+                clip: on(input('opt-clip').checked),
                 dir: input('opt-dir').value.trim(),
                 limit: on(input('opt-limit').checked),
                 limitKB: input('opt-kb').value.trim(),

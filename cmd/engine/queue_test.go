@@ -188,10 +188,10 @@ func TestQueueAndSettingsLimits(t *testing.T) {
 		t.Fatal("a refused save changed a setting")
 	}
 	call(t, e, "settings.save", map[string]string{setSchedStop: ""})
-	// Streams and finished downloads can't wait in the queue.
+	// Downloads that can't be resumed can't wait in the queue.
 	id := e.newJob("https://a.test/v.m3u8", nil, func(j *job) { j.State = fetch.Failed }).ID
 	if r := e.handle(ipc.Message{Type: "queue.add", Payload: payload(map[string]any{"ids": []uint64{id}})}); r.Type != "error" {
-		t.Fatalf("stream queued: %+v", r)
+		t.Fatalf("failed download queued: %+v", r)
 	}
 	if r := e.handle(ipc.Message{Type: "queue.move", Payload: payload(map[string]any{"id": id, "by": 1})}); r.Type != "error" {
 		t.Fatalf("moved: %+v", r)
