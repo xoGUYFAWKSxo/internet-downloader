@@ -3,7 +3,8 @@
 Made the app icon (ui/build/appicon.png, ui/build/windows/icon.ico,
 cmd/engine/tray.ico, extension/src/icon.png) and the store images' backgrounds.
 Needs Pillow and NumPy: python galaxy.py icon.png  (1024 x 1024, seeded, so
-the same picture every time). Smaller sizes are Lanczos downscales, with a
+the same picture every time), with a white download arrow at the bottom
+right. Smaller sizes are Lanczos downscales, with a
 light unsharp mask at 48 px and below."""
 import numpy as np
 from PIL import Image
@@ -167,11 +168,43 @@ def screen(base, glow):
     return 1 - (1 - base) * (1 - glow)
 
 
+def download_badge(img, cx=0.75, cy=0.75, r=0.2):
+    """Draws a white download arrow (arrow into a tray) over an RGBA icon, with a
+    soft dark shadow so it reads over the bright arms at small sizes. Centre and
+    half-size are fractions of the icon size; drawn 4x and downscaled."""
+    from PIL import ImageDraw, ImageFilter
+    size = img.size[0]
+    ss = 4
+    S = size * ss
+    mask = Image.new('L', (S, S), 0)
+    d = ImageDraw.Draw(mask)
+    X, Y, R = cx * S, cy * S, r * S
+    w = R * 0.26  # stroke width
+    # Shaft and head.
+    top, tip = Y - R * 0.80, Y + R * 0.30
+    d.rectangle([X - w / 2, top, X + w / 2, tip - R * 0.40], fill=255)
+    d.polygon([(X - R * 0.55, tip - R * 0.50), (X + R * 0.55, tip - R * 0.50), (X, tip + R * 0.05)], fill=255)
+    # Tray.
+    ty = Y + R * 0.72
+    d.rectangle([X - R * 0.72, ty - w / 2, X + R * 0.72, ty + w / 2], fill=255)
+    for sx in (-1, 1):
+        x0 = X + sx * R * 0.72
+        d.rectangle([min(x0, x0 - sx * w), ty - R * 0.34, max(x0, x0 - sx * w), ty + w / 2], fill=255)
+    mask = mask.resize((size, size), Image.LANCZOS)
+    shadow = mask.filter(ImageFilter.MaxFilter(3 if size < 256 else 2 * (size // 256) + 1))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(size * 0.018))
+    shadow = shadow.point(lambda v: min(255, int(v * 1.6)))
+    out = img.copy()
+    out.alpha_composite(Image.merge('RGBA', [Image.new('L', (size, size), c) for c in (4, 6, 20)] + [shadow]))
+    out.alpha_composite(Image.merge('RGBA', [Image.new('L', (size, size), 255)] * 3 + [mask]))
+    return out
+
+
 def icon(size=1024, exposure=2.2, bold=False):
     light = galaxy(size, (0.47 if bold else 0.45) * size, size / 2, size / 2, rot=np.deg2rad(-28), bold=bold)
     g = tonemap(light, exposure)
     rgb = screen(background(size, size, stars=not bold, seed=11), g)
-    return to_image(rgb, rounded_mask(size, 0.185))
+    return download_badge(to_image(rgb, rounded_mask(size, 0.185)))
 
 
 if __name__ == '__main__':
