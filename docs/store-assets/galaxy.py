@@ -3,7 +3,8 @@
 Made the app icon (ui/build/appicon.png, ui/build/windows/icon.ico,
 cmd/engine/tray.ico, extension/src/icon.png) and the store images' backgrounds.
 Needs Pillow and NumPy: python galaxy.py icon.png  (1024 x 1024, seeded, so
-the same picture every time). Smaller sizes are Lanczos downscales, with a
+the same picture every time), with a download-arrow badge at the bottom
+right. Smaller sizes are Lanczos downscales, with a
 light unsharp mask at 48 px and below."""
 import numpy as np
 from PIL import Image
@@ -167,11 +168,42 @@ def screen(base, glow):
     return 1 - (1 - base) * (1 - glow)
 
 
+def download_badge(img, cx=0.745, cy=0.745, r=0.215):
+    """Draws a round download-arrow badge (arrow into a tray) over an RGBA icon.
+    Centre and radius are fractions of the icon size; drawn 4x and downscaled."""
+    from PIL import ImageDraw
+    size = img.size[0]
+    ss = 4
+    S = size * ss
+    layer = Image.new('RGBA', (S, S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer)
+    X, Y, R = cx * S, cy * S, r * S
+    # Dark rim so the badge stands off the galaxy, then a blue disc.
+    d.ellipse([X - R * 1.09, Y - R * 1.09, X + R * 1.09, Y + R * 1.09], fill=(8, 10, 28, 255))
+    d.ellipse([X - R, Y - R, X + R, Y + R], fill=(52, 120, 246, 255))
+    w = R * 0.24  # stroke width
+    white = (255, 255, 255, 255)
+    # Shaft and head.
+    top, tip = Y - R * 0.58, Y + R * 0.24
+    d.rectangle([X - w / 2, top, X + w / 2, tip - R * 0.30], fill=white)
+    d.polygon([(X - R * 0.42, tip - R * 0.38), (X + R * 0.42, tip - R * 0.38), (X, tip + R * 0.06)], fill=white)
+    # Tray.
+    ty = Y + R * 0.50
+    d.rectangle([X - R * 0.52, ty - w / 2, X + R * 0.52, ty + w / 2], fill=white)
+    for sx in (-1, 1):
+        x0 = X + sx * R * 0.52
+        d.rectangle([min(x0, x0 - sx * w), ty - R * 0.26, max(x0, x0 - sx * w), ty + w / 2], fill=white)
+    layer = layer.resize((size, size), Image.LANCZOS)
+    out = img.copy()
+    out.alpha_composite(layer)
+    return out
+
+
 def icon(size=1024, exposure=2.2, bold=False):
     light = galaxy(size, (0.47 if bold else 0.45) * size, size / 2, size / 2, rot=np.deg2rad(-28), bold=bold)
     g = tonemap(light, exposure)
     rgb = screen(background(size, size, stars=not bold, seed=11), g)
-    return to_image(rgb, rounded_mask(size, 0.185))
+    return download_badge(to_image(rgb, rounded_mask(size, 0.185)))
 
 
 if __name__ == '__main__':
