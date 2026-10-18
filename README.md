@@ -45,3 +45,9 @@ Run these in PowerShell from the project folder (`cd` into it first). Needs Go a
    - Chrome or Edge: open `chrome://extensions` (or `edge://extensions`), turn on Developer mode, click Load unpacked, and pick `extension\dist\chrome`.
    - Firefox: open `about:debugging`, click This Firefox, then Load Temporary Add-on, and pick `extension\dist\firefox\manifest.json`.
 6. Click the extension's icon, then "Check connection to the app". It should say it's connected and show the version.
+
+## Support
+
+Galactic Studio makes free, open-source Windows tools. If this one is useful to you, a donation helps keep them going.
+
+<a href="https://www.paypal.com/donate/?hosted_button_id=KK7CBMCLSJHWW"><img src="docs/donate-button.png" alt="Support Galactic Studio" width="360"></a>
